@@ -50,7 +50,7 @@ competitive reference containing the nuclear genome as bait plus the
 mitochondrial genome as the target. That lets NuMT-like reads choose their best
 nuclear placement instead of inflating mitochondrial expression.
 
-`scripts/build_rnaseq_tracks.py` records one small public RNA-seq candidate per
+`scripts/build_rnaseq_tracks.py` records one public RNA-seq candidate per
 fixture species and expects a local whole-genome FASTA for the bait reference:
 
 ```bash
@@ -60,12 +60,16 @@ python scripts/build_rnaseq_tracks.py human --bait-fasta GRCh38.primary_assembly
 The script removes mitochondrial-looking contigs from the bait FASTA, appends
 the fixture mitogenome, maps a bounded FASTQ prefix with `minimap2 -ax sr`, and
 keeps only primary alignments whose best target is the mitochondrial contig.
-The initial candidates are:
+For the committed RNA-seq BAMs, prefixes were increased until mean mitochondrial
+depth was around 50x or higher; the fly RNA-seq BAM was then downsampled because
+the initial prefix was far deeper than needed for plotting.
+
+The current RNA-seq fixtures are:
 
 - `human`: `DRR001175`, Illumina single-end RNA-seq.
 - `mouse`: `DRR001494`, Illumina single-end RNA-seq.
 - `drosophila`: `DRR016419`, Illumina single-end RNA-seq.
-- `sponge`: `SRR3168560`, Illumina single-end RNA-seq from `Ephydatia muelleri`.
+- `sponge`: `SRR14102585`, Illumina paired-end RNA-seq from `Ephydatia muelleri`.
 
 If we use long-read RNA-seq later, pass `--preset splice` or another minimap2
 preset. These candidates are short-read RNA-seq, so `minimap2 -ax sr` is the

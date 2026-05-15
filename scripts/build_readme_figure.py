@@ -44,6 +44,8 @@ MISMATCH_COLORS = {
     "mixed": "#f2c94c",
 }
 
+RNA_CMAP = "plasma"
+
 
 def theta(pos: int, length: int) -> float:
     return 90 - ((pos % length) / length * 360)
@@ -114,6 +116,56 @@ def consensus_profile(bam_path: Path, reference: str) -> tuple[list[str], list[t
             mismatch_type = "fixed" if fraction >= 0.75 else "mixed"
             mismatches.append((pos, mismatch_type))
     return consensus, mismatches
+
+
+def depth_profile(bam_path: Path, length: int) -> np.ndarray:
+    depth = np.zeros(length, dtype=float)
+    if not bam_path.exists():
+        return depth
+    with pysam.AlignmentFile(bam_path, "rb") as bam:
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped:
+                continue
+            for start, stop in read.get_blocks():
+                start %= length
+                stop = min(stop, start + length)
+                if stop <= length:
+                    depth[start:stop] += 1
+                else:
+                    depth[start:length] += 1
+                    depth[0 : stop - length] += 1
+    return depth
+
+
+def add_annulus_image(
+    ax,
+    values: np.ndarray,
+    inner_radius: float,
+    outer_radius: float,
+    cmap_name: str,
+    image_size: int = 760,
+    min_alpha: float = 0.06,
+) -> None:
+    if len(values) == 0:
+        return
+    length = len(values)
+    transformed = np.log1p(values)
+    max_value = float(np.max(transformed))
+    if max_value > 0:
+        transformed = transformed / max_value
+
+    cmap = plt.get_cmap(cmap_name)
+    grid = np.zeros((image_size, image_size, 4), dtype=float)
+    axis = np.linspace(-1.22, 1.22, image_size)
+    x, y = np.meshgrid(axis, axis)
+    radii = np.sqrt((x * x) + (y * y))
+    angles = (np.degrees(np.arctan2(y, x)) + 360) % 360
+    positions = (((90 - angles) % 360) / 360 * length).astype(int) % length
+    mask = (radii >= inner_radius) & (radii < outer_radius)
+    colors = cmap(np.take(transformed, positions))
+    colors[..., 3] = min_alpha + (0.92 * np.take(transformed, positions))
+    grid[mask] = colors[mask]
+    ax.imshow(grid, extent=(-1.22, 1.22, -1.22, 1.22), origin="lower", interpolation="nearest", zorder=1)
 
 
 def add_sequence_tracks(
@@ -208,6 +260,8 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
     fg = "#eef4fb" if dark else "#111827"
     read_color = "#e9eef5" if dark else "#111111"
     tick_color = "#9aa8b7" if dark else "#667085"
+    rnaseq_bam = dataset_dir / "rnaseq.mapped.bam"
+    rnaseq_depth = depth_profile(rnaseq_bam, length)
 
     ax.set_aspect("equal")
     ax.set_xlim(-1.22, 1.22)
@@ -215,13 +269,13 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
     ax.set_xticks([])
     ax.set_yticks([])
 
-    for radius, width, alpha in [(0.24, 0.012, 0.28), (1.13, 0.012, 0.45)]:
+    for radius, width, alpha in [(0.24, 0.012, 0.28)]:
         ax.add_patch(Wedge((0, 0), radius, 0, 360, width=width, color=tick_color, alpha=alpha))
 
     for bp in range(0, length, 5000):
         angle = theta(bp, length)
-        x0, y0 = 1.09 * np.cos(np.deg2rad(angle)), 1.09 * np.sin(np.deg2rad(angle))
-        x1, y1 = 1.14 * np.cos(np.deg2rad(angle)), 1.14 * np.sin(np.deg2rad(angle))
+        x0, y0 = 1.135 * np.cos(np.deg2rad(angle)), 1.135 * np.sin(np.deg2rad(angle))
+        x1, y1 = 1.18 * np.cos(np.deg2rad(angle)), 1.18 * np.sin(np.deg2rad(angle))
         ax.plot([x0, x1], [y0, y1], color=tick_color, lw=0.8, alpha=0.65)
 
     for row, (start, stop) in enumerate(read_spans(dataset_dir / manifest["bam"], length, max_reads)):
@@ -229,6 +283,7 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
         add_arc(ax, start, stop, length, radius, 0.0058, color=read_color, alpha=0.72, linewidth=0)
 
     add_sequence_tracks(ax, reference, consensus, mismatches)
+    add_annulus_image(ax, rnaseq_depth, 1.055, 1.125, RNA_CMAP, min_alpha=0.02)
 
     for feature in parse_gff(dataset_dir / manifest["annotation"]):
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")

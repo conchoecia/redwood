@@ -1,0 +1,20 @@
+{
+  "name": "human",
+  "label": "Homo sapiens RNA-seq",
+  "run_accession": "DRR001175",
+  "strategy": "RNA-Seq",
+  "layout": "SINGLE",
+  "platform": "ILLUMINA",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR001/DRR001175/DRR001175.fastq.gz"
+  ],
+  "records_scanned_per_fastq": 5000000,
+  "bait_contigs_kept": 454,
+  "mapped_mito_alignments": 27105,
+  "bam": "rnaseq.mapped.bam",
+  "bam_index": "rnaseq.mapped.bam.bai",
+  "selection": {
+    "strategy": "map_to_nuclear_bait_plus_mito_then_keep_primary_mito_alignments",
+    "minimap2_preset": "sr"
+  }
+}

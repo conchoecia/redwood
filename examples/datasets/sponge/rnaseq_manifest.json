@@ -1,0 +1,21 @@
+{
+  "name": "sponge",
+  "label": "Ephydatia muelleri RNA-seq",
+  "run_accession": "SRR14102585",
+  "strategy": "RNA-Seq",
+  "layout": "SINGLE",
+  "platform": "ILLUMINA",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR141/085/SRR14102585/SRR14102585_1.fastq.gz",
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR141/085/SRR14102585/SRR14102585_2.fastq.gz"
+  ],
+  "records_scanned_per_fastq": 1000000,
+  "bait_contigs_kept": 2626,
+  "mapped_mito_alignments": 8605,
+  "bam": "rnaseq.mapped.bam",
+  "bam_index": "rnaseq.mapped.bam.bai",
+  "selection": {
+    "strategy": "map_to_nuclear_bait_plus_mito_then_keep_primary_mito_alignments",
+    "minimap2_preset": "sr"
+  }
+}

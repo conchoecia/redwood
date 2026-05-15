@@ -15,6 +15,8 @@ dist/
 *.bai
 !examples/datasets/*/reads.mapped.bam
 !examples/datasets/*/reads.mapped.bam.bai
+!examples/datasets/*/rnaseq.mapped.bam
+!examples/datasets/*/rnaseq.mapped.bam.bai
 *.amb
 *.ann
 *.bwt

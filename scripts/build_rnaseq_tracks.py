@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import shutil
 import subprocess
@@ -29,7 +30,7 @@ RNA_DATASETS = {
         "layout": "SINGLE",
         "platform": "ILLUMINA",
         "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR001/DRR001175/DRR001175.fastq.gz"],
-        "max_records": 200000,
+        "max_records": 5000000,
         "minimap2_preset": "sr",
     },
     "mouse": {
@@ -39,7 +40,7 @@ RNA_DATASETS = {
         "layout": "SINGLE",
         "platform": "ILLUMINA",
         "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR001/DRR001494/DRR001494.fastq.gz"],
-        "max_records": 200000,
+        "max_records": 3000000,
         "minimap2_preset": "sr",
     },
     "drosophila": {
@@ -49,23 +50,26 @@ RNA_DATASETS = {
         "layout": "SINGLE",
         "platform": "ILLUMINA",
         "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR016/DRR016419/DRR016419.fastq.gz"],
-        "max_records": 200000,
+        "max_records": 1000000,
+        "target_depth": 75,
         "minimap2_preset": "sr",
     },
     "sponge": {
         "label": "Ephydatia muelleri RNA-seq",
-        "run": "SRR3168560",
+        "run": "SRR14102585",
         "strategy": "RNA-Seq",
-        "layout": "SINGLE",
+        "layout": "PAIRED",
         "platform": "ILLUMINA",
-        "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR316/000/SRR3168560/SRR3168560.fastq.gz"],
-        "max_records": 200000,
+        "fastq": [
+            "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR141/085/SRR14102585/SRR14102585_1.fastq.gz",
+            "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR141/085/SRR14102585/SRR14102585_2.fastq.gz",
+        ],
+        "max_records": 1000000,
         "minimap2_preset": "sr",
     },
 }
 
 MITO_HEADER_TOKENS = (
-    "chrm",
     "chrmt",
     " mitochond",
     "mitochondrion",
@@ -94,6 +98,9 @@ def copy_fastq_prefix(url: str, out: Path, max_records: int) -> int:
 
 
 def should_skip_bait_header(header: str, extra_tokens: list[str]) -> bool:
+    first_word = header.split()[0].lower().replace("_", "").replace("-", "")
+    if first_word in {"chrm", "chrmt", "mt", "mtdna"}:
+        return True
     normalized = header.lower().replace("_", "").replace("-", "")
     tokens = list(MITO_HEADER_TOKENS) + [token.lower() for token in extra_tokens]
     return any(token.replace("_", "").replace("-", "") in normalized for token in tokens)
@@ -102,7 +109,8 @@ def should_skip_bait_header(header: str, extra_tokens: list[str]) -> bool:
 def append_filtered_fasta(source: Path, dest, extra_exclude_tokens: list[str]) -> int:
     kept = 0
     write_record = False
-    with source.open() as handle:
+    opener = gzip.open if source.suffix == ".gz" else open
+    with opener(source, "rt") as handle:
         for line in handle:
             if line.startswith(">"):
                 write_record = not should_skip_bait_header(line[1:].strip(), extra_exclude_tokens)
@@ -131,7 +139,7 @@ def build_combined_reference(
     output.parent.mkdir(parents=True, exist_ok=True)
     mito_name = first_fasta_name(mito_fasta)
     with output.open("w") as dest:
-        kept = append_filtered_fasta(bait_fasta, dest, extra_exclude_tokens + [mito_name])
+        kept = append_filtered_fasta(bait_fasta, dest, extra_exclude_tokens)
         with mito_fasta.open() as mito:
             shutil.copyfileobj(mito, dest)
     return mito_name, kept
@@ -181,7 +189,45 @@ def filter_mito_bam(raw_bam: Path, out_bam: Path, mito_name: str) -> int:
     return kept
 
 
-def write_manifest(path: Path, dataset: str, config: dict[str, object], kept: int, bait_contigs: int) -> None:
+def alignment_depth(read: pysam.AlignedSegment) -> int:
+    return sum(stop - start for start, stop in read.get_blocks())
+
+
+def downsample_bam_to_depth(bam_path: Path, target_depth: float) -> tuple[int, float]:
+    tmp_bam = bam_path.with_suffix(".tmp.bam")
+    with pysam.AlignmentFile(bam_path, "rb") as source:
+        sequence_length = source.lengths[0]
+        target_bases = target_depth * sequence_length
+        reads = [read for read in source.fetch(until_eof=True) if not read.is_unmapped]
+        reads.sort(
+            key=lambda read: hashlib.sha256(
+                f"{read.query_name}:{read.reference_start}:{read.flag}".encode()
+            ).hexdigest()
+        )
+        kept = []
+        kept_bases = 0
+        for read in reads:
+            kept.append(read)
+            kept_bases += alignment_depth(read)
+            if kept_bases >= target_bases:
+                break
+        with pysam.AlignmentFile(tmp_bam, "wb", header=source.header) as dest:
+            for read in kept:
+                dest.write(read)
+    subprocess.run(["samtools", "sort", "-o", str(bam_path), str(tmp_bam)], check=True)
+    subprocess.run(["samtools", "index", str(bam_path)], check=True)
+    tmp_bam.unlink(missing_ok=True)
+    return len(kept), round(kept_bases / sequence_length, 2)
+
+
+def write_manifest(
+    path: Path,
+    dataset: str,
+    config: dict[str, object],
+    kept: int,
+    bait_contigs: int,
+    observed_depth: float | None = None,
+) -> None:
     manifest = {
         "name": dataset,
         "label": config["label"],
@@ -200,6 +246,11 @@ def write_manifest(path: Path, dataset: str, config: dict[str, object], kept: in
             "minimap2_preset": config["minimap2_preset"],
         },
     }
+    if observed_depth is not None:
+        manifest["selection"]["post_filter"] = (
+            f"deterministic_downsample_to_approximately_{config['target_depth']}x_mean_mitochondrial_depth"
+        )
+        manifest["selection"]["observed_mean_depth"] = observed_depth
     path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
@@ -210,12 +261,18 @@ def build_dataset(
     cache_dir: Path,
     max_records: int | None,
     preset: str | None,
+    run: str | None,
+    fastq_urls: list[str] | None,
 ) -> None:
     config = dict(RNA_DATASETS[dataset])
     if max_records is not None:
         config["max_records"] = max_records
     if preset is not None:
         config["minimap2_preset"] = preset
+    if run is not None:
+        config["run"] = run
+    if fastq_urls is not None:
+        config["fastq"] = fastq_urls
     dataset_dir = datasets_dir / dataset
     work_dir = cache_dir / "rnaseq" / dataset
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +293,10 @@ def build_dataset(
     out_bam = dataset_dir / "rnaseq.mapped.bam"
     map_rnaseq(combined_ref, fastqs, str(config["minimap2_preset"]), raw_bam)
     kept = filter_mito_bam(raw_bam, out_bam, mito_name)
-    write_manifest(dataset_dir / "rnaseq_manifest.json", dataset, config, kept, bait_contigs)
+    observed_depth = None
+    if config.get("target_depth"):
+        kept, observed_depth = downsample_bam_to_depth(out_bam, float(config["target_depth"]))
+    write_manifest(dataset_dir / "rnaseq_manifest.json", dataset, config, kept, bait_contigs, observed_depth)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -247,11 +307,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cache-dir", type=Path, default=Path("examples/datasets/.cache"))
     parser.add_argument("--max-records", type=int)
     parser.add_argument("--preset", default=None, help="Override the minimap2 preset, e.g. sr or splice.")
+    parser.add_argument("--run-accession", default=None, help="Override the configured run accession.")
+    parser.add_argument(
+        "--fastq-url",
+        action="append",
+        default=None,
+        help="Override configured FASTQ URL. Repeat for paired-end runs.",
+    )
     args = parser.parse_args(argv)
 
     for tool in ["minimap2", "samtools"]:
         require_tool(tool)
-    build_dataset(args.dataset, args.bait_fasta, args.datasets_dir, args.cache_dir, args.max_records, args.preset)
+    build_dataset(
+        args.dataset,
+        args.bait_fasta,
+        args.datasets_dir,
+        args.cache_dir,
+        args.max_records,
+        args.preset,
+        args.run_accession,
+        args.fastq_url,
+    )
     return 0
 
 

@@ -1,0 +1,22 @@
+{
+  "name": "drosophila",
+  "label": "Drosophila melanogaster RNA-seq",
+  "run_accession": "DRR016419",
+  "strategy": "RNA-Seq",
+  "layout": "SINGLE",
+  "platform": "ILLUMINA",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR016/DRR016419/DRR016419.fastq.gz"
+  ],
+  "records_scanned_per_fastq": 1000000,
+  "bait_contigs_kept": 6,
+  "mapped_mito_alignments": 14655,
+  "bam": "rnaseq.mapped.bam",
+  "bam_index": "rnaseq.mapped.bam.bai",
+  "selection": {
+    "strategy": "map_to_nuclear_bait_plus_mito_then_keep_primary_mito_alignments",
+    "minimap2_preset": "sr",
+    "post_filter": "deterministic_downsample_to_approximately_75x_mean_mitochondrial_depth",
+    "observed_mean_depth": 75.0
+  }
+}
