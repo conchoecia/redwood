@@ -42,3 +42,33 @@ a command to render the plot.
 The BAMs are mapped to a doubled copy of each mitogenome so reads crossing the
 linearized origin can be plotted correctly. Use `--doubled main` when rendering
 datasets whose manifest has `"doubled_reference": true`.
+
+## RNA-seq bait mapping
+
+The RNA-seq track should be built by mapping public RNA-seq reads against a
+competitive reference containing the nuclear genome as bait plus the
+mitochondrial genome as the target. That lets NuMT-like reads choose their best
+nuclear placement instead of inflating mitochondrial expression.
+
+`scripts/build_rnaseq_tracks.py` records one small public RNA-seq candidate per
+fixture species and expects a local whole-genome FASTA for the bait reference:
+
+```bash
+python scripts/build_rnaseq_tracks.py human --bait-fasta GRCh38.primary_assembly.fa
+```
+
+The script removes mitochondrial-looking contigs from the bait FASTA, appends
+the fixture mitogenome, maps a bounded FASTQ prefix with `minimap2 -ax sr`, and
+keeps only primary alignments whose best target is the mitochondrial contig.
+The initial candidates are:
+
+- `human`: `DRR001175`, Illumina single-end RNA-seq.
+- `mouse`: `DRR001494`, Illumina single-end RNA-seq.
+- `drosophila`: `DRR016419`, Illumina single-end RNA-seq.
+- `sponge`: `SRR3168560`, Illumina single-end RNA-seq from `Ephydatia muelleri`.
+
+If we use long-read RNA-seq later, pass `--preset splice` or another minimap2
+preset. These candidates are short-read RNA-seq, so `minimap2 -ax sr` is the
+appropriate starting point. For sponge intron/splicing questions, we should
+compare this against a splice-aware short-read mapper before treating gaps as
+biology.

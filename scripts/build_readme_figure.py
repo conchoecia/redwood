@@ -11,6 +11,7 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/redwood-matplotlib")
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Wedge
 import numpy as np
 import pysam
@@ -30,6 +31,19 @@ FEATURE_COLORS = {
     "tRNA": "#d870a2",
 }
 
+BASE_COLORS = {
+    "A": "#4c78a8",
+    "C": "#54a24b",
+    "G": "#f58518",
+    "T": "#b279a2",
+    "N": "#9aa8b7",
+}
+
+MISMATCH_COLORS = {
+    "fixed": "#d62728",
+    "mixed": "#f2c94c",
+}
+
 
 def theta(pos: int, length: int) -> float:
     return 90 - ((pos % length) / length * 360)
@@ -46,6 +60,101 @@ def add_arc(ax, start: int, stop: int, length: int, radius: float, width: float,
         add_arc(ax, 0, stop - length, length, radius, width, **kwargs)
         return
     ax.add_patch(Wedge((0, 0), radius, theta(stop, length), theta(start, length), width=width, **kwargs))
+
+
+def read_reference(path: Path) -> str:
+    seq = []
+    for line in path.read_text().splitlines():
+        if not line or line.startswith(">"):
+            continue
+        seq.append(line.strip())
+    return "".join(seq).upper()
+
+
+def at_profile(reference: str, window: int = 201) -> list[float]:
+    half = window // 2
+    doubled = reference + reference
+    profile = []
+    offset = len(reference)
+    for i in range(len(reference)):
+        segment = doubled[offset + i - half : offset + i + half + 1]
+        if not segment:
+            profile.append(0.0)
+        else:
+            profile.append((segment.count("A") + segment.count("T")) / len(segment))
+    return profile
+
+
+def consensus_profile(bam_path: Path, reference: str) -> tuple[list[str], list[tuple[int, str]]]:
+    length = len(reference)
+    counts = [{base: 0 for base in "ACGT"} for _ in range(length)]
+    with pysam.AlignmentFile(bam_path, "rb") as bam:
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped or read.query_sequence is None:
+                continue
+            for query_pos, ref_pos in read.get_aligned_pairs(matches_only=True):
+                if query_pos is None or ref_pos is None:
+                    continue
+                base = read.query_sequence[query_pos].upper()
+                if base in "ACGT":
+                    counts[ref_pos % length][base] += 1
+
+    consensus = []
+    mismatches = []
+    for pos, base_counts in enumerate(counts):
+        depth = sum(base_counts.values())
+        if depth == 0:
+            consensus.append("N")
+            continue
+        base, count = max(base_counts.items(), key=lambda item: item[1])
+        consensus.append(base)
+        ref_base = reference[pos]
+        if ref_base in "ACGT" and base != ref_base and depth >= 5:
+            fraction = count / depth
+            mismatch_type = "fixed" if fraction >= 0.75 else "mixed"
+            mismatches.append((pos, mismatch_type))
+    return consensus, mismatches
+
+
+def add_sequence_tracks(
+    ax,
+    reference: str,
+    consensus: list[str],
+    mismatches: list[tuple[int, str]],
+    image_size: int = 760,
+) -> None:
+    length = len(reference)
+    at_values = np.asarray(at_profile(reference))
+    mismatch_lookup = dict(mismatches)
+    base_rgba = {base: to_rgba(color, 0.94) for base, color in BASE_COLORS.items()}
+    mismatch_rgba = {key: to_rgba(color, 0.96) for key, color in MISMATCH_COLORS.items()}
+
+    grid = np.zeros((image_size, image_size, 4), dtype=float)
+    axis = np.linspace(-1.22, 1.22, image_size)
+    x, y = np.meshgrid(axis, axis)
+    radii = np.sqrt((x * x) + (y * y))
+    angles = (np.degrees(np.arctan2(y, x)) + 360) % 360
+    positions = (((90 - angles) % 360) / 360 * length).astype(int) % length
+
+    consensus_mask = (radii >= 0.799) & (radii < 0.825)
+    mismatch_mask = (radii >= 0.832) & (radii < 0.856)
+    at_mask = (radii >= 0.860) & (radii < 0.908)
+
+    for base, rgba in base_rgba.items():
+        grid[consensus_mask & (np.take(consensus, positions) == base)] = rgba
+
+    at_colors = plt.cm.cividis(np.take(at_values, positions))
+    at_colors[..., 3] = 0.92
+    grid[at_mask] = at_colors[at_mask]
+
+    if mismatches:
+        mismatch_types = np.full(length, "", dtype=object)
+        for pos, mismatch_type in mismatch_lookup.items():
+            mismatch_types[pos] = mismatch_type
+        for mismatch_type, rgba in mismatch_rgba.items():
+            grid[mismatch_mask & (np.take(mismatch_types, positions) == mismatch_type)] = rgba
+
+    ax.imshow(grid, extent=(-1.22, 1.22, -1.22, 1.22), origin="lower", interpolation="nearest", zorder=1)
 
 
 def parse_gff(path: Path) -> list[dict[str, object]]:
@@ -94,6 +203,8 @@ def read_spans(path: Path, true_length: int, max_reads: int) -> list[tuple[int, 
 def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, dark: bool) -> None:
     manifest = json.loads((dataset_dir / "manifest.json").read_text())
     length = int(manifest["sequence_length"])
+    reference = read_reference(dataset_dir / manifest["reference"])
+    consensus, mismatches = consensus_profile(dataset_dir / manifest["bam"], reference)
     fg = "#eef4fb" if dark else "#111827"
     read_color = "#e9eef5" if dark else "#111111"
     tick_color = "#9aa8b7" if dark else "#667085"
@@ -104,23 +215,25 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
     ax.set_xticks([])
     ax.set_yticks([])
 
-    for radius, width, alpha in [(0.26, 0.012, 0.28), (1.0, 0.014, 0.5)]:
+    for radius, width, alpha in [(0.24, 0.012, 0.28), (1.13, 0.012, 0.45)]:
         ax.add_patch(Wedge((0, 0), radius, 0, 360, width=width, color=tick_color, alpha=alpha))
 
     for bp in range(0, length, 5000):
         angle = theta(bp, length)
-        x0, y0 = 0.91 * np.cos(np.deg2rad(angle)), 0.91 * np.sin(np.deg2rad(angle))
-        x1, y1 = 1.0 * np.cos(np.deg2rad(angle)), 1.0 * np.sin(np.deg2rad(angle))
+        x0, y0 = 1.09 * np.cos(np.deg2rad(angle)), 1.09 * np.sin(np.deg2rad(angle))
+        x1, y1 = 1.14 * np.cos(np.deg2rad(angle)), 1.14 * np.sin(np.deg2rad(angle))
         ax.plot([x0, x1], [y0, y1], color=tick_color, lw=0.8, alpha=0.65)
 
     for row, (start, stop) in enumerate(read_spans(dataset_dir / manifest["bam"], length, max_reads)):
-        radius = 0.32 + (row * 0.0105)
-        add_arc(ax, start, stop, length, radius, 0.0065, color=read_color, alpha=0.72, linewidth=0)
+        radius = 0.31 + (row * 0.0087)
+        add_arc(ax, start, stop, length, radius, 0.0058, color=read_color, alpha=0.72, linewidth=0)
+
+    add_sequence_tracks(ax, reference, consensus, mismatches)
 
     for feature in parse_gff(dataset_dir / manifest["annotation"]):
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")
-        radius = 1.08 if feature["type"] == "tRNA" else 1.035
-        width = 0.035 if feature["type"] == "tRNA" else 0.052
+        radius = 1.025 if feature["type"] == "tRNA" else 0.982
+        width = 0.032 if feature["type"] == "tRNA" else 0.050
         add_arc(ax, int(feature["start"]), int(feature["stop"]), length, radius, width, color=color, alpha=0.95, linewidth=0)
 
     ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")
