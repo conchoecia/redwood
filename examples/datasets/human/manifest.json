@@ -1,0 +1,26 @@
+{
+  "name": "human",
+  "label": "Homo sapiens rCRS",
+  "reference_accession": "NC_012920.1",
+  "run_accession": "DRR165688",
+  "platform": "ont",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR165/DRR165688/DRR165688_1.fastq.gz"
+  ],
+  "reference": "reference.fa",
+  "bam_reference": "human_doubled",
+  "doubled_reference": true,
+  "annotation": "annotation.gff",
+  "bam": "reads.mapped.bam",
+  "bam_index": "reads.mapped.bam.bai",
+  "fasta_header": "NC_012920.1 Homo sapiens mitochondrion, complete genome",
+  "sequence_length": 16569,
+  "records_scanned_per_fastq": [
+    15000
+  ],
+  "mapped_alignments": 80,
+  "mapped_bases": 530658,
+  "approx_depth": 32.03,
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+  "note": "Reduced to the first 80 coordinate-sorted real mapped alignments for faster plotting iteration."
+}

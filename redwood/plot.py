@@ -105,6 +105,13 @@ def plotArc(start_angle, stop_angle, radius, width, **kwargs):
     arcArray = np.concatenate((stack1,stack2), axis=0)
     return patches.Polygon(arcArray, closed=True, **kwargs), ((x1, y1), (x2, y2))
 
+def angle_at_index(angle_map, index):
+    """Return a plotting angle, allowing reads to extend past the last base."""
+    if len(angle_map) <= 1:
+        return angle_map[0]
+    step = (angle_map[-1] - angle_map[0]) / (len(angle_map) - 1)
+    return angle_map[0] + (step * index)
+
 def fix_query_reflength(sequence_length, queries, doubled):
     """
     arguments:
@@ -302,9 +309,9 @@ def plot_reads(args, angleMap, widthDict, samFiledf, start_radius,
         #Subtract one because BAM uses 1-based indexing but plotting uses 0.
         # I think I could avoid this in the future by changing the parse
         start_index = samFiledf.loc[i, 'POS'] - 1
-        start_angle= angleMap[start_index]
+        start_angle = angle_at_index(angleMap, start_index)
         stop_index = 0
-        stop_angle = angleMap[stop_index]
+        stop_angle = angle_at_index(angleMap, stop_index)
         if args.log and thisLog:
             log = 100
             read_width = track_width * ((cust_log(log, current_row + 1)/cust_log(log, track_depth + 1))\
@@ -316,7 +323,7 @@ def plot_reads(args, angleMap, widthDict, samFiledf, start_radius,
         if collapse:
             for collapse_i in range(start_index, start_index+mapLen):
                 #print("looking at {} and found {}".format(collapse_i, plotted_depth_map[collapse_i]))
-                if plotted_depth_map[collapse_i] >= current_row:
+                if plotted_depth_map[collapse_i % len(plotted_depth_map)] >= current_row:
                     skip = True
                     break
         #if we don't skip it, we're gonna plot it!
@@ -324,7 +331,8 @@ def plot_reads(args, angleMap, widthDict, samFiledf, start_radius,
             # Note that we are plotting something here
             if collapse:
                 for collapse_i in range(start_index, start_index+mapLen):
-                    plotted_depth_map[collapse_i] = plotted_depth_map[collapse_i] + 1
+                    depth_i = collapse_i % len(plotted_depth_map)
+                    plotted_depth_map[depth_i] = plotted_depth_map[depth_i] + 1
             for tup in stringTuples:
                 if tup[1] == 'I':
                     #If there is an insertion, back up halfway and make plot the
@@ -333,19 +341,19 @@ def plot_reads(args, angleMap, widthDict, samFiledf, start_radius,
                     # after the insertion.
                     iStartIndex = start_index-int(tup[0]/2)
                     iStopIndex = iStartIndex + tup[0]
-                    iStartAngle = angleMap[iStartIndex]
-                    iStopAngle = angleMap[iStopIndex]
+                    iStartAngle = angle_at_index(angleMap, iStartIndex)
+                    iStopAngle = angle_at_index(angleMap, iStopIndex)
                     arc, arcArray =  plotArc(start_angle=iStartAngle, stop_angle=iStopAngle,
                                   radius=start_radius + append_radius,
                                   width=widthDict[tup[1]] * read_width, fc='black')
                 else:
                     stop_index = start_index + tup[0]
-                    stop_angle = angleMap[stop_index]
+                    stop_angle = angle_at_index(angleMap, stop_index)
                     arc, arcArray =  plotArc(start_angle=start_angle, stop_angle=stop_angle,
                                   radius=start_radius + append_radius,
                                   width=widthDict[tup[1]] * read_width, fc='black')
                     start_index = stop_index
-                    start_angle = angleMap[start_index]
+                    start_angle = angle_at_index(angleMap, start_index)
                 myPatches.append(arc)
             # If we're not collapsing the reads, we just advance one every row
             if not collapse:
@@ -652,10 +660,12 @@ def redwood(args):
             # It is necessary to drop the column called index, since reset_index()
             #  adds this.
             samFile = samFile.drop('index', axis=1)
+        else:
+            samFile = samFile.features
 
         #this plots the central rings from the sam file
         read_patches, radius = plot_reads(args, angleMap, widthDict, samFile,
-                                          radius, doubled = True, collapse = False)
+                                          radius, doubled = main_doubled, collapse = False)
         myPatches = myPatches + read_patches
 
     # if the user would like to plot the annotation, plot it now. In the future,
@@ -738,8 +748,8 @@ def plot_feature(this_feature, colorMap, start_radius,
     """
     myPatches = []
     if this_feature_overlaps_feature.empty:
-        iStartAngle = angleMap[this_feature['start']]
-        iStopAngle = angleMap[this_feature['stop']] - 2
+        iStartAngle = angle_at_index(angleMap, this_feature['start'])
+        iStopAngle = angle_at_index(angleMap, this_feature['stop']) - 2
         arc, arcArray = plotArc(start_angle=iStartAngle,
                                   stop_angle=iStopAngle,
                                   radius = start_radius, width=bar_thickness,
@@ -748,8 +758,8 @@ def plot_feature(this_feature, colorMap, start_radius,
         #this bit plots the arrow triangles for the genes.
         #  Right now it makes each arrow only 1 degree in width and uses 100 segments to plot it.
         #  This resolution hasn't given me any artifacts thus far
-        tStartAngle = angleMap[this_feature['stop']]-2
-        tStopAngle = angleMap[this_feature['stop']]
+        tStartAngle = angle_at_index(angleMap, this_feature['stop']) - 2
+        tStopAngle = angle_at_index(angleMap, this_feature['stop'])
         angles = np.linspace(tStartAngle,tStopAngle,100)
         widths = np.linspace(bar_thickness,0,100)
         for j in range(len(angles)-1):
@@ -761,24 +771,24 @@ def plot_feature(this_feature, colorMap, start_radius,
             myPatches.append(arc)
     else:
         # First, make a solid white bar
-        iStartAngle = angleMap[this_feature['start']]
-        iStopAngle = angleMap[this_feature_overlaps_feature['start']]
+        iStartAngle = angle_at_index(angleMap, this_feature['start'])
+        iStopAngle = angle_at_index(angleMap, this_feature_overlaps_feature['start'])
         arc, arcArray = plotArc(start_angle=iStartAngle,
                                   stop_angle=iStopAngle,
                                   radius = start_radius, width=bar_thickness,
                                   fc=colorMap['spacebar'])
         myPatches.append(arc)
         # Now, make the actual color bar
-        iStartAngle = angleMap[this_feature['start']]
-        iStopAngle = angleMap[this_feature_overlaps_feature['start']] - 1
+        iStartAngle = angle_at_index(angleMap, this_feature['start'])
+        iStopAngle = angle_at_index(angleMap, this_feature_overlaps_feature['start']) - 1
         arc, arcArray =  plotArc(start_angle=iStartAngle,
                                   stop_angle=iStopAngle,
                                   radius = start_radius, width=bar_thickness,
                                   fc=colorMap[this_feature['featType']])
         myPatches.append(arc)
         #first plot a little pink bar for the outline
-        tStartAngle = angleMap[this_feature_overlaps_feature['start']]
-        tStopAngle = angleMap[this_feature['stop']]+1
+        tStartAngle = angle_at_index(angleMap, this_feature_overlaps_feature['start'])
+        tStopAngle = angle_at_index(angleMap, this_feature['stop']) + 1
         angles = np.linspace(tStartAngle,tStopAngle,100)
         widths = np.linspace(bar_thickness,0,100)
         for j in range(len(angles)-1):
@@ -791,8 +801,8 @@ def plot_feature(this_feature, colorMap, start_radius,
         #this bit plots the arrow triangles for the genes.
         #  Right now it makes each arrow only 1 degree in width and uses 100 segments to plot it.
         #  This resolution hasn't given me any artifacts thus far
-        tStartAngle = angleMap[this_feature_overlaps_feature['start']]-1
-        tStopAngle = angleMap[this_feature['stop']]
+        tStartAngle = angle_at_index(angleMap, this_feature_overlaps_feature['start']) - 1
+        tStopAngle = angle_at_index(angleMap, this_feature['stop'])
         angles = np.linspace(tStartAngle,tStopAngle,100)
         widths = np.linspace(bar_thickness,0,100)
         for j in range(len(angles)-1):
@@ -837,77 +847,54 @@ def plot_gff(args, panelCircle, gff_path, radius):
     # return these at the end
     myPatches=[]
     plot_order = []
-    # this for loop relies on the gff features to already be sorted
-    i = 0
-    idone = False
     # we need to filter out the tRNAs since those are plotted last
     plottable_features = gffParser.features.query("featType != 'tRNA' and featType != 'region' and featType != 'source'")
     plottable_features = plottable_features.reset_index(drop=True)
-    while idone == False:
-        print("im in the overlap-pairing while loop i={}".format(i))
-        # look ahead at all of the elements that overlap with the ith element
-        jdone = False
-        j = 1
-        this_set_minimum_index = i
-        this_set_maximum_index = i
-        while jdone == False:
-            print("new i= {} j={} len={}".format(i, j, len(plottable_features)))
-            # first make sure that we haven't gone off the end of the dataframe
-            if i+j == len(plottable_features):
-                if i == len(plottable_features)-1:
-                    # this is the last analysis, so set idone to true
-                    #  to finish after this
-                    idone = True
-                    # the last one can't be in its own group, so just add it solo
-                    these_features = plottable_features.loc[this_set_minimum_index:this_set_maximum_index,]
-                    plot_order.append(these_features.reset_index(drop=True))
-                    break
-                jdone == True
+    if len(plottable_features) > 0:
+        group_start = 0
+        group_stop = 0
+        group_rmost = plottable_features.loc[0, 'rmost']
+        for i in range(1, len(plottable_features)):
+            if plottable_features.loc[i, 'lmost'] < group_rmost:
+                group_stop = i
+                group_rmost = max(group_rmost, plottable_features.loc[i, 'rmost'])
             else:
-                # if the lmost of the next gene overlaps with the rmost of
-                #  the current one, it overlaps and couple together
-                if plottable_features.loc[i+j, 'lmost'] < plottable_features.loc[i, 'rmost']:
-                    # note that this feature overlaps with the current
-                    this_set_maximum_index = i+j
-                    # ... and we need to look at the next in line
-                    j += 1
-                else:
-                    i += 1 + (this_set_maximum_index - this_set_minimum_index)
-                    #add all of the things that grouped together once we don't find any more groups
-                    these_features = plottable_features.loc[this_set_minimum_index:this_set_maximum_index,]
-                    plot_order.append(these_features.reset_index(drop=True))
-                    jdone = True
+                these_features = plottable_features.loc[group_start:group_stop,]
+                plot_order.append(these_features.reset_index(drop=True))
+                group_start = i
+                group_stop = i
+                group_rmost = plottable_features.loc[i, 'rmost']
+        these_features = plottable_features.loc[group_start:group_stop,]
+        plot_order.append(these_features.reset_index(drop=True))
 
+    direction = '+'
     for feature_set in plot_order:
         print(feature_set)
         direction = feature_set_direction(feature_set)
         print("direction = {}".format(direction))
-        if direction == '+':
-            for i in range(len(feature_set)-1, -1,-1):
-                print("inside the plot for loop i = {}".format(i))
-                this_feature = feature_set.loc[i,]
-                print("got this single feature")
-                #For the first element, just plot it normally
-                if i == len(feature_set) - 1:
-                    #plot the annotation
-                    print("Im in the first plot thing")
-                    patches = plot_feature(this_feature, colorMap, start_radius,
-                                           bar_thickness, direction,
-                                           pd.Series(dtype=object))
-                    for each in patches:
-                        myPatches.append(each)
-                else:
-                    print("now I'm plotting the other one")
-                    overlapped_feature = feature_set.loc[i+1,]
-                    print("this is the overlapped feature")
-                    print(overlapped_feature)
-                    patches = plot_feature(this_feature, colorMap, start_radius,
-                                           bar_thickness, direction,
-                                           overlapped_feature)
-                    for each in patches:
-                        myPatches.append(each)
+        for i in range(len(feature_set)-1, -1,-1):
+            print("inside the plot for loop i = {}".format(i))
+            this_feature = feature_set.loc[i,]
+            print("got this single feature")
+            if i == len(feature_set) - 1:
+                print("Im in the first plot thing")
+                patches = plot_feature(this_feature, colorMap, start_radius,
+                                       bar_thickness, direction,
+                                       pd.Series(dtype=object))
+                for each in patches:
+                    myPatches.append(each)
+            else:
+                print("now I'm plotting the other one")
+                overlapped_feature = feature_set.loc[i+1,]
+                print("this is the overlapped feature")
+                print(overlapped_feature)
+                patches = plot_feature(this_feature, colorMap, start_radius,
+                                       bar_thickness, direction,
+                                       overlapped_feature)
+                for each in patches:
+                    myPatches.append(each)
 
-            final_radius = start_radius + track_width
+    final_radius = start_radius + track_width
     # Now we add all of the tRNAs to this to plot, do it last to overlay
     #  everything else
     tRNAs = gffParser.features.query("featType == 'tRNA'")
@@ -921,8 +908,8 @@ def plot_gff(args, panelCircle, gff_path, radius):
     angle_ranges = []
     for i in range(0,len(tRNAs)):
         this_feature = tRNAs.loc[i,]
-        min_angle = angleMap[min(this_feature.loc['start'],this_feature.loc['stop'])]
-        max_angle = angleMap[max(this_feature.loc['start'],this_feature.loc['stop'])]
+        min_angle = angle_at_index(angleMap, min(this_feature.loc['start'],this_feature.loc['stop']))
+        max_angle = angle_at_index(angleMap, max(this_feature.loc['start'],this_feature.loc['stop']))
         angle_ranges.append((min_angle, max_angle))
         patches = plot_feature(this_feature, colorMap, tRNA_start_radius,
                                tRNA_bar_thickness, direction,
@@ -948,7 +935,7 @@ def plot_gff(args, panelCircle, gff_path, radius):
             # then, figure out the center angle of that position.
             #  I subtract one since I want to center this for the non-arrow
             #  part of the bar.
-            center_angle = angleMap[middle_position]-2
+            center_angle = angle_at_index(angleMap, middle_position)-2
             count = 0
             while count < 1:
                 print()
@@ -978,8 +965,8 @@ def plot_gff(args, panelCircle, gff_path, radius):
                     print("min_overlapping_angle = {}".format(min_overlapping_angle))
                     max_overlapping_angle = max(overlapping_angles)
                     print("max_overlapping_angle = {}".format(max_overlapping_angle))
-                    gene_start_angle = angleMap[gffParser.features.loc[i,'start']]
-                    gene_stop_angle  = angleMap[gffParser.features.loc[i,'stop']]
+                    gene_start_angle = angle_at_index(angleMap, gffParser.features.loc[i,'start'])
+                    gene_stop_angle  = angle_at_index(angleMap, gffParser.features.loc[i,'stop'])
                     start_dif = abs(min_overlapping_angle - gene_start_angle)
                     stop_dif =  abs(gene_stop_angle - max_overlapping_angle)
                     print("start_dif = {}, stop_dif = {}".format(start_dif, stop_dif))
@@ -1002,7 +989,7 @@ def plot_gff(args, panelCircle, gff_path, radius):
             print_count = 0
             for j in range(len(angles)):
                 this_width = gffParser.features.loc[i,'width']
-                if not text_angle > (angleMap[this_width] - 1):
+                if not text_angle > (angle_at_index(angleMap, this_width) - 1):
                     if center_angle > 95 and center_angle < 265:
                         rotation = (-1 * center_angle) - 180
                         this_char = name[len(angles) - 1 - j]
@@ -1026,8 +1013,8 @@ def plot_gff(args, panelCircle, gff_path, radius):
                 else:
                     if print_count == 0:
                         if gffParser.features.loc[i,'strand'] == '+':
-                            gene_start_angle = angleMap[gffParser.features.loc[i,'start']]
-                            gene_stop_angle  = angleMap[gffParser.features.loc[i,'stop']]
+                            gene_start_angle = angle_at_index(angleMap, gffParser.features.loc[i,'start'])
+                            gene_stop_angle  = angle_at_index(angleMap, gffParser.features.loc[i,'stop'])
                             center_angle = gene_stop_angle - ((gene_stop_angle-gene_start_angle)/2) 
                         # now calculate the absolute x position
                         x_pos = -np.cos(np.radians(center_angle+90)) * center_radius

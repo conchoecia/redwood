@@ -1,0 +1,26 @@
+{
+  "name": "mouse",
+  "label": "Mus musculus",
+  "reference_accession": "NC_005089.1",
+  "run_accession": "DRR188136",
+  "platform": "ont",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR188/DRR188136/DRR188136_1.fastq.gz"
+  ],
+  "reference": "reference.fa",
+  "bam_reference": "mouse_doubled",
+  "doubled_reference": true,
+  "annotation": "annotation.gff",
+  "bam": "reads.mapped.bam",
+  "bam_index": "reads.mapped.bam.bai",
+  "fasta_header": "NC_005089.1 Mus musculus mitochondrion, complete genome",
+  "sequence_length": 16299,
+  "records_scanned_per_fastq": [
+    30000
+  ],
+  "mapped_alignments": 254,
+  "mapped_bases": 651964,
+  "approx_depth": 40.0,
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+  "note": "Reduced from the initial mapping pass to a 30-50x real-read fixture for faster plotting iteration."
+}

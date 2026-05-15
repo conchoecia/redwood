@@ -1,0 +1,26 @@
+{
+  "name": "drosophila",
+  "label": "Drosophila melanogaster",
+  "reference_accession": "NC_024511.2",
+  "run_accession": "SRR12177581",
+  "platform": "ont",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR121/081/SRR12177581/SRR12177581_1.fastq.gz"
+  ],
+  "reference": "reference.fa",
+  "bam_reference": "drosophila_doubled",
+  "doubled_reference": true,
+  "annotation": "annotation.gff",
+  "bam": "reads.mapped.bam",
+  "bam_index": "reads.mapped.bam.bai",
+  "fasta_header": "NC_024511.2 Drosophila melanogaster mitochondrion, complete genome",
+  "sequence_length": 19524,
+  "records_scanned_per_fastq": [
+    80000
+  ],
+  "mapped_alignments": 491,
+  "mapped_bases": 781013,
+  "approx_depth": 40.0,
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+  "note": "Reduced from the initial mapping pass to a 30-50x real-read fixture for faster plotting iteration."
+}

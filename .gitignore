@@ -12,3 +12,11 @@ dist/
 *.svg
 *.bam
 *.bai
+!examples/datasets/*/reads.mapped.bam
+!examples/datasets/*/reads.mapped.bam.bai
+*.amb
+*.ann
+*.bwt
+*.pac
+*.sa
+examples/datasets/.cache/

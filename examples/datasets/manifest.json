@@ -1,0 +1,123 @@
+[
+  {
+    "name": "human",
+    "label": "Homo sapiens rCRS",
+    "reference_accession": "NC_012920.1",
+    "run_accession": "DRR165688",
+    "platform": "ont",
+    "fastq_urls": [
+      "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR165/DRR165688/DRR165688_1.fastq.gz"
+    ],
+    "reference": "reference.fa",
+    "bam_reference": "human_doubled",
+    "doubled_reference": true,
+    "annotation": "annotation.gff",
+    "bam": "reads.mapped.bam",
+    "bam_index": "reads.mapped.bam.bai",
+    "fasta_header": "NC_012920.1 Homo sapiens mitochondrion, complete genome",
+    "sequence_length": 16569,
+    "records_scanned_per_fastq": [
+      15000
+    ],
+    "mapped_alignments": 80,
+    "mapped_bases": 530658,
+    "approx_depth": 32.03,
+    "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+    "note": "Reduced to the first 80 coordinate-sorted real mapped alignments for faster plotting iteration."
+  },
+  {
+    "name": "drosophila",
+    "label": "Drosophila melanogaster",
+    "reference_accession": "NC_024511.2",
+    "run_accession": "SRR12177581",
+    "platform": "ont",
+    "fastq_urls": [
+      "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR121/081/SRR12177581/SRR12177581_1.fastq.gz"
+    ],
+    "reference": "reference.fa",
+    "bam_reference": "drosophila_doubled",
+    "doubled_reference": true,
+    "annotation": "annotation.gff",
+    "bam": "reads.mapped.bam",
+    "bam_index": "reads.mapped.bam.bai",
+    "fasta_header": "NC_024511.2 Drosophila melanogaster mitochondrion, complete genome",
+    "sequence_length": 19524,
+    "records_scanned_per_fastq": [
+      80000
+    ],
+    "mapped_alignments": 491,
+    "mapped_bases": 781013,
+    "approx_depth": 40.0,
+    "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+    "note": "Reduced from the initial mapping pass to a 30-50x real-read fixture for faster plotting iteration."
+  },
+  {
+    "name": "mouse",
+    "label": "Mus musculus",
+    "reference_accession": "NC_005089.1",
+    "run_accession": "DRR188136",
+    "platform": "ont",
+    "fastq_urls": [
+      "https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR188/DRR188136/DRR188136_1.fastq.gz"
+    ],
+    "reference": "reference.fa",
+    "bam_reference": "mouse_doubled",
+    "doubled_reference": true,
+    "annotation": "annotation.gff",
+    "bam": "reads.mapped.bam",
+    "bam_index": "reads.mapped.bam.bai",
+    "fasta_header": "NC_005089.1 Mus musculus mitochondrion, complete genome",
+    "sequence_length": 16299,
+    "records_scanned_per_fastq": [
+      30000
+    ],
+    "mapped_alignments": 254,
+    "mapped_bases": 651964,
+    "approx_depth": 40.0,
+    "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+    "note": "Reduced from the initial mapping pass to a 30-50x real-read fixture for faster plotting iteration."
+  },
+  {
+    "name": "sponge",
+    "label": "Spheciospongia vesparium",
+    "reference_accession": "MZ675556.1",
+    "run_accession": "SRR15070719",
+    "platform": "illumina-pe",
+    "fastq_urls": [
+      "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_1.fastq.gz",
+      "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_2.fastq.gz"
+    ],
+    "reference": "reference.fa",
+    "bam_reference": "sponge_doubled",
+    "annotation": "annotation.gff",
+    "bam": "reads.mapped.bam",
+    "bam_index": "reads.mapped.bam.bai",
+    "fasta_header": "MZ675556.1 UNVERIFIED: Spheciospongia vesparium mitochondrion sequence",
+    "sequence_length": 21763,
+    "records_scanned_per_fastq": [
+      900000,
+      900000
+    ],
+    "mapped_alignments": 2492,
+    "mapped_bases": 575497,
+    "approx_depth": 26.44,
+    "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
+    "doubled_reference": true,
+    "note": "Real paired-end Illumina fixture; kept at about 26x because mitochondrial read fraction is low in the bounded prefix."
+  },
+  {
+    "name": "beroe",
+    "label": "Beroe forskalii manuscript reads",
+    "reference": "MG655622",
+    "status": "blocked",
+    "bioproject": "PRJNA421807",
+    "sra_samples": [
+      "SRS2786396",
+      "SRS2786397",
+      "SRS2786398",
+      "SRS2786399",
+      "SRS5502111"
+    ],
+    "note": "PMC6991124 points to PRJNA421807, but public run accessions were not returned by NCBI SRA runinfo/search or ENA run search on 2026-05-15."
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "name": "beroe",
+  "label": "Beroe forskalii manuscript reads",
+  "reference": "MG655622",
+  "status": "blocked",
+  "bioproject": "PRJNA421807",
+  "sra_samples": [
+    "SRS2786396",
+    "SRS2786397",
+    "SRS2786398",
+    "SRS2786399",
+    "SRS5502111"
+  ],
+  "note": "PMC6991124 points to PRJNA421807, but public run accessions were not returned by NCBI SRA runinfo/search or ENA run search on 2026-05-15."
+}
