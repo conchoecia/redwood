@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redwood"
+dynamic = ["version"]
+description = "Circular genome plots derived from pauvre's redwood plotter."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "Darrin Schultz"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "matplotlib>=3.5",
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "pysam>=0.21",
+    "scipy>=1.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
+[project.urls]
+Homepage = "https://github.com/conchoecia/redwood"
+Source = "https://github.com/conchoecia/redwood"
+
+[project.scripts]
+redwood = "redwood.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "redwood.version.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["redwood*"]
