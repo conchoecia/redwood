@@ -43,17 +43,21 @@ DATASETS = {
         "max_records": 8000,
         "target_depth": 32,
         "double_reference": True,
+        "min_span_fraction": 0.35,
+        "overcollect": 4,
     },
     "drosophila": {
         "label": "Drosophila melanogaster",
         "reference": "NC_024511.2",
-        "run": "SRR12177581",
+        "run": "SRR12187559",
         "platform": "ont",
-        "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR121/081/SRR12177581/SRR12177581_1.fastq.gz"],
-        "batch_records": 10000,
-        "max_records": 80000,
+        "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR121/059/SRR12187559/SRR12187559_1.fastq.gz"],
+        "batch_records": 20000,
+        "max_records": 160000,
         "target_depth": 40,
         "double_reference": True,
+        "min_span_fraction": 0.25,
+        "overcollect": 5,
     },
     "mouse": {
         "label": "Mus musculus",
@@ -65,20 +69,21 @@ DATASETS = {
         "max_records": 30000,
         "target_depth": 40,
         "double_reference": True,
+        "min_span_fraction": 0.35,
+        "overcollect": 4,
     },
     "sponge": {
-        "label": "Spheciospongia vesparium",
-        "reference": "MZ675556.1",
-        "run": "SRR15070719",
-        "platform": "illumina-pe",
-        "fastq": [
-            "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_1.fastq.gz",
-            "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_2.fastq.gz",
-        ],
-        "batch_records": 100000,
-        "max_records": 1000000,
+        "label": "Ephydatia muelleri",
+        "reference": "NC_010202.1",
+        "run": "SRR10983242",
+        "platform": "pacbio",
+        "fastq": ["https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR109/042/SRR10983242/SRR10983242_subreads.fastq.gz"],
+        "batch_records": 10000,
+        "max_records": 40000,
         "target_depth": 25,
         "double_reference": True,
+        "min_span_fraction": 0.25,
+        "overcollect": 3,
     },
 }
 
@@ -145,7 +150,7 @@ def normalize_gff(accession: str, text: str, seqlen: int) -> str:
         _, source, feat_type, start, stop, _, strand, _, attrs = fields
         if feat_type not in {"CDS", "rRNA", "tRNA"}:
             continue
-        name = attr_value(attrs, "gene", "Name", "product", "ID") or feat_type
+        name = attr_value(attrs, "standard_name", "gene", "product", "Name", "locus_tag", "ID") or feat_type
         name = re.sub(r"^MT-?", "", name)
         out_type = "gene" if feat_type == "CDS" else feat_type
         key = (out_type, start, stop, strand, name)
@@ -186,8 +191,44 @@ def mapped_bases(bam: Path) -> int:
     with pysam.AlignmentFile(bam, "rb") as handle:
         for read in handle.fetch(until_eof=True):
             if not read.is_unmapped:
-                total += read.query_alignment_length or read.query_length or 0
+                total += read.reference_length or read.query_alignment_length or read.query_length or 0
     return total
+
+
+def circular_span(read: pysam.AlignedSegment, sequence_length: int) -> tuple[int, int]:
+    start = read.reference_start % sequence_length
+    span = read.reference_length or read.query_alignment_length or read.query_length or 0
+    return start, min(span, sequence_length)
+
+
+def selected_read_metrics(bam: Path, sequence_length: int) -> dict[str, object]:
+    spans = []
+    bins = [0] * 48
+    with pysam.AlignmentFile(bam, "rb") as handle:
+        for read in handle.fetch(until_eof=True):
+            if read.is_unmapped:
+                continue
+            start, span = circular_span(read, sequence_length)
+            spans.append(span)
+            first_bin = int(start / sequence_length * len(bins))
+            last_bin = int(((start + span - 1) % sequence_length) / sequence_length * len(bins))
+            if span >= sequence_length:
+                covered = range(len(bins))
+            elif start + span <= sequence_length:
+                covered = range(first_bin, last_bin + 1)
+            else:
+                covered = list(range(first_bin, len(bins))) + list(range(0, last_bin + 1))
+            for bin_index in covered:
+                bins[bin_index] += 1
+    if not spans:
+        return {"min_depth_bin": 0, "max_depth_bin": 0, "median_span_fraction": 0, "max_span_fraction": 0}
+    spans = sorted(spans)
+    return {
+        "min_depth_bin": min(bins),
+        "max_depth_bin": max(bins),
+        "median_span_fraction": round(spans[len(spans) // 2] / sequence_length, 3),
+        "max_span_fraction": round(max(spans) / sequence_length, 3),
+    }
 
 
 def merge_bams(inputs: list[Path], out: Path) -> None:
@@ -199,12 +240,85 @@ def merge_bams(inputs: list[Path], out: Path) -> None:
     run_command([samtools, "index", str(out)])
 
 
+def select_long_circular_reads(
+    inputs: list[Path],
+    out: Path,
+    sequence_length: int,
+    target_depth: float,
+    min_span_fraction: float,
+) -> None:
+    candidates = []
+    header = None
+    for bam in inputs:
+        with pysam.AlignmentFile(bam, "rb") as handle:
+            if header is None:
+                header = handle.header
+            for read in handle.fetch(until_eof=True):
+                if read.is_unmapped:
+                    continue
+                start, span = circular_span(read, sequence_length)
+                if span / sequence_length < min_span_fraction:
+                    continue
+                candidates.append(
+                    {
+                        "read": read,
+                        "start": start,
+                        "span": span,
+                        "span_fraction": span / sequence_length,
+                    }
+                )
+    if not candidates:
+        raise SystemExit("no mapped reads passed the long-read span threshold")
+
+    target_bases = int(target_depth * sequence_length)
+    bins = 96
+    coverage = [0] * bins
+    selected = []
+    selected_bases = 0
+    unused = sorted(candidates, key=lambda item: item["span"], reverse=True)
+    while unused and selected_bases < target_bases:
+        best_index = 0
+        best_score = None
+        for index, item in enumerate(unused[:2000]):
+            start = int(item["start"])
+            span = int(item["span"])
+            covered_bins = {
+                int(((start + offset) % sequence_length) / sequence_length * bins)
+                for offset in range(0, span, max(1, sequence_length // bins))
+            }
+            if span >= sequence_length:
+                covered_bins = set(range(bins))
+            novelty = sum(1 / (1 + coverage[bin_index]) for bin_index in covered_bins)
+            score = (novelty, item["span_fraction"], -max(coverage[bin_index] for bin_index in covered_bins))
+            if best_score is None or score > best_score:
+                best_index = index
+                best_score = score
+        item = unused.pop(best_index)
+        selected.append(item["read"])
+        selected_bases += int(item["span"])
+        start = int(item["start"])
+        span = int(item["span"])
+        for offset in range(0, span, max(1, sequence_length // bins)):
+            coverage[int(((start + offset) % sequence_length) / sequence_length * bins)] += 1
+
+    tmp = out.with_suffix(".unsorted.bam")
+    assert header is not None
+    with pysam.AlignmentFile(tmp, "wb", header=header) as handle:
+        for read in selected:
+            handle.write(read)
+    pysam.sort("-o", str(out), str(tmp))
+    pysam.index(str(out))
+    tmp.unlink()
+
+
 def align_fastqs(spec: dict[str, object], ref: Path, fastq_paths: list[Path], bam: Path) -> None:
     minimap2 = require_tool("minimap2")
     bwa = require_tool("bwa")
     samtools = require_tool("samtools")
     if spec["platform"] == "ont":
         cmd = [minimap2, "-a", "-x", "map-ont", str(ref), str(fastq_paths[0])]
+    elif spec["platform"] == "pacbio":
+        cmd = [minimap2, "-a", "-x", "map-pb", str(ref), str(fastq_paths[0])]
     else:
         if not (ref.with_suffix(ref.suffix + ".bwt")).exists():
             run_command([bwa, "index", str(ref)])
@@ -279,6 +393,7 @@ def build_mapping(spec: dict[str, object], outdir: Path, cache: Path, name: str)
     batch_records = int(spec["batch_records"])
     max_records = int(spec["max_records"])
     target_bases = int(float(spec["target_depth"]) * len(seq))
+    overcollect_bases = int(target_bases * float(spec.get("overcollect", 3)))
     chunk_bams = []
     total_bases = 0
     total_mapped = 0
@@ -294,13 +409,20 @@ def build_mapping(spec: dict[str, object], outdir: Path, cache: Path, name: str)
             chunk_bams.append(chunk_bam)
             total_mapped += chunk_mapped
             total_bases += chunk_bases
-        if total_bases >= target_bases:
+        if total_bases >= overcollect_bases:
             break
     if not chunk_bams:
         raise SystemExit(f"no reads from {spec['run']} mapped to {accession}; increase max_records or choose another run")
-    merge_bams(chunk_bams, bam)
+    select_long_circular_reads(
+        chunk_bams,
+        bam,
+        len(seq),
+        float(spec["target_depth"]),
+        float(spec.get("min_span_fraction", 0.2)),
+    )
     count = mapped_count(bam)
     bases = mapped_bases(bam)
+    metrics = selected_read_metrics(bam, len(seq))
     return {
         "reference": ref.name,
         "bam_reference": mapping_name,
@@ -314,6 +436,12 @@ def build_mapping(spec: dict[str, object], outdir: Path, cache: Path, name: str)
         "mapped_alignments": count,
         "mapped_bases": bases,
         "approx_depth": round(bases / len(seq), 2),
+        "selection": {
+            "strategy": "greedy_long_read_circular_coverage",
+            "target_depth": float(spec["target_depth"]),
+            "min_span_fraction": float(spec.get("min_span_fraction", 0.2)),
+            **metrics,
+        },
     }
 
 

@@ -16,11 +16,19 @@
   "fasta_header": "NC_012920.1 Homo sapiens mitochondrion, complete genome",
   "sequence_length": 16569,
   "records_scanned_per_fastq": [
-    15000
+    8000
   ],
-  "mapped_alignments": 80,
-  "mapped_bases": 530658,
-  "approx_depth": 32.03,
-  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
-  "note": "Reduced to the first 80 coordinate-sorted real mapped alignments for faster plotting iteration."
+  "mapped_alignments": 38,
+  "mapped_bases": 535990,
+  "approx_depth": 32.35,
+  "selection": {
+    "strategy": "greedy_long_read_circular_coverage",
+    "target_depth": 32.0,
+    "min_span_fraction": 0.35,
+    "min_depth_bin": 23,
+    "max_depth_bin": 39,
+    "median_span_fraction": 0.862,
+    "max_span_fraction": 1.0
+  },
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False"
 }

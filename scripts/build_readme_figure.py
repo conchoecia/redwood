@@ -20,7 +20,7 @@ DATASETS = [
     ("human", "Human", "Homo sapiens", 24),
     ("mouse", "Mouse", "Mus musculus", 36),
     ("drosophila", "Fly", "Drosophila melanogaster", 44),
-    ("sponge", "Sponge", "Spheciospongia vesparium", 56),
+    ("sponge", "Sponge", "Ephydatia muelleri", 56),
 ]
 
 FEATURE_COLORS = {

@@ -18,9 +18,17 @@
   "records_scanned_per_fastq": [
     30000
   ],
-  "mapped_alignments": 254,
-  "mapped_bases": 651964,
-  "approx_depth": 40.0,
-  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
-  "note": "Reduced from the initial mapping pass to a 30-50x real-read fixture for faster plotting iteration."
+  "mapped_alignments": 45,
+  "mapped_bases": 657697,
+  "approx_depth": 40.35,
+  "selection": {
+    "strategy": "greedy_long_read_circular_coverage",
+    "target_depth": 40.0,
+    "min_span_fraction": 0.35,
+    "min_depth_bin": 33,
+    "max_depth_bin": 46,
+    "median_span_fraction": 0.975,
+    "max_span_fraction": 0.999
+  },
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False"
 }

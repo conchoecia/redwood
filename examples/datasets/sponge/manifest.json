@@ -1,28 +1,34 @@
 {
   "name": "sponge",
-  "label": "Spheciospongia vesparium",
-  "reference_accession": "MZ675556.1",
-  "run_accession": "SRR15070719",
-  "platform": "illumina-pe",
+  "label": "Ephydatia muelleri",
+  "reference_accession": "NC_010202.1",
+  "run_accession": "SRR10983242",
+  "platform": "pacbio",
   "fastq_urls": [
-    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_1.fastq.gz",
-    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR150/019/SRR15070719/SRR15070719_2.fastq.gz"
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR109/042/SRR10983242/SRR10983242_subreads.fastq.gz"
   ],
   "reference": "reference.fa",
   "bam_reference": "sponge_doubled",
+  "doubled_reference": true,
   "annotation": "annotation.gff",
   "bam": "reads.mapped.bam",
   "bam_index": "reads.mapped.bam.bai",
-  "fasta_header": "MZ675556.1 UNVERIFIED: Spheciospongia vesparium mitochondrion sequence",
-  "sequence_length": 21763,
+  "fasta_header": "NC_010202.1 Ephydatia muelleri mitochondrion, complete genome",
+  "sequence_length": 23929,
   "records_scanned_per_fastq": [
-    900000,
-    900000
+    40000
   ],
-  "mapped_alignments": 2492,
-  "mapped_bases": 575497,
-  "approx_depth": 26.44,
-  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False",
-  "doubled_reference": true,
-  "note": "Real paired-end Illumina fixture; kept at about 26x because mitochondrial read fraction is low in the bounded prefix."
+  "mapped_alignments": 28,
+  "mapped_bases": 641412,
+  "approx_depth": 26.8,
+  "selection": {
+    "strategy": "greedy_long_read_circular_coverage",
+    "target_depth": 25.0,
+    "min_span_fraction": 0.25,
+    "min_depth_bin": 22,
+    "max_depth_bin": 29,
+    "median_span_fraction": 0.938,
+    "max_span_fraction": 1.0
+  },
+  "redwood_command": "redwood plot --gff annotation.gff --main-bam reads.mapped.bam --doubled main --no-timestamp -o plot --query False"
 }

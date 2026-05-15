@@ -2,8 +2,9 @@
 
 These examples are intended for visual work on redwood plots. BAM files in this
 directory are committed fixtures from real sequencing runs, not simulated reads.
-Most are trimmed to roughly 30-50x mitochondrial depth so plot iteration stays
-fast.
+Most are trimmed to roughly 25-40x mitochondrial depth so plot iteration stays
+fast, with reads selected for long mitochondrial spans and balanced circular
+coverage.
 
 Build or refresh datasets with:
 
@@ -14,7 +15,8 @@ python scripts/build_real_read_datasets.py
 The builder downloads a bounded prefix of each run's public FASTQ file(s), maps
 those real reads to the target mitogenome, and keeps only mapped alignments.
 Temporary FASTQ files stay under `examples/datasets/.cache/` and are not
-committed.
+committed. Long-read fixtures are selected greedily to favor reads that span a
+large fraction of the mitogenome while filling under-covered circular bins.
 
 ## Beroe manuscript reads
 
@@ -29,15 +31,14 @@ fabricate Beroe BAMs.
 ## Included real-run targets
 
 - `human`: `NC_012920.1`, real ONT WGS reads from `DRR165688`.
-- `drosophila`: `NC_024511.2`, real ONT WGS reads from `SRR12177581`.
+- `drosophila`: `NC_024511.2`, real ONT WGS reads from `SRR12187559`.
 - `mouse`: `NC_005089.1`, real ONT WGS reads from `DRR188136`.
-- `sponge`: `MZ675556.1`, real Illumina WGS reads from `SRR15070719`
-  (`Spheciospongia vesparium`, 21.8 kb mitogenome).
+- `sponge`: `NC_010202.1`, real PacBio WGS reads from `SRR10983242`
+  (`Ephydatia muelleri`, complete annotated mitogenome).
 
 Each dataset directory contains a `manifest.json` with source run metadata and
 a command to render the plot.
 
 The BAMs are mapped to a doubled copy of each mitogenome so reads crossing the
 linearized origin can be plotted correctly. Use `--doubled main` when rendering
-datasets whose manifest has `"doubled_reference": true`. The sponge dataset is
-about 26x because the mitochondrial fraction in the bounded read prefix is low.
+datasets whose manifest has `"doubled_reference": true`.
