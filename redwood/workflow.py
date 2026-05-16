@@ -445,7 +445,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 sort="ALNLEN",
                 ticks=args.ticks,
                 transparent=args.transparent,
-                max_reads=48,
+                max_reads=args.max_reads,
                 dark=False,
                 title=None,
                 subtitle=None,

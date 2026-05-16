@@ -40,6 +40,7 @@ redwood plot \
   --rnaseq-bam rnaseq.bam \
   --gff annotation.gff \
   --doubled main \
+  --max-reads 80 \
   --query "ALNLEN >= 10000" "MAPLEN < reflength" \
   -o sample_redwood
 ```
@@ -64,6 +65,8 @@ redwood run \
   --gff annotation.gff \
   --long-reads ont.fastq.gz \
   --rnaseq-reads rna_1.fastq.gz rna_2.fastq.gz \
+  --long-read-depth 100 \
+  --max-reads 80 \
   --outdir redwood-work
 ```
 

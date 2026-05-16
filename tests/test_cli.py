@@ -12,6 +12,7 @@ def test_plot_parser_defaults():
     assert args.transparent is True
     assert args.verbose is False
     assert args.mito_fasta is None
+    assert args.max_reads == 80
 
 
 def test_end_to_end_parser_accepts_references_and_reads():
@@ -38,7 +39,8 @@ def test_end_to_end_parser_accepts_references_and_reads():
     assert str(args.nuclear_fasta) == "nuclear.fa"
     assert [str(path) for path in args.long_reads] == ["ont.fastq.gz"]
     assert [str(path) for path in args.rnaseq_reads] == ["rna_1.fastq.gz", "rna_2.fastq.gz"]
-    assert args.long_read_depth == 50.0
+    assert args.long_read_depth == 100.0
+    assert args.max_reads == 80
 
 
 def test_plot_parser_accepts_extra_tracks():

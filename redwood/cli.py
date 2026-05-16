@@ -78,7 +78,7 @@ def build_parser():
     parser_plot.add_argument("-i", "--invert", action="store_true", default=False)
     parser_plot.add_argument("-L", "--log", action="store_true", default=False)
     parser_plot.add_argument("-M", "--main-bam", dest="main_bam", metavar="mainbam", action=FullPaths)
-    parser_plot.add_argument("--max-reads", type=int, default=48)
+    parser_plot.add_argument("--max-reads", type=int, default=80)
     parser_plot.add_argument("--no-timestamp", dest="no_timestamp", action="store_true")
     parser_plot.add_argument(
         "-o",
@@ -171,7 +171,7 @@ def build_parser():
         default="map-ont",
         help="minimap2 preset for long-read mapping.",
     )
-    parser_long.add_argument("--target-depth", type=float, default=50.0)
+    parser_long.add_argument("--target-depth", type=float, default=100.0)
     parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_long.add_argument("--dry-run", action="store_true")
     parser_long.set_defaults(func=map_long)
@@ -216,7 +216,8 @@ def build_parser():
     parser_run.add_argument("--outdir", required=True, type=Path)
     parser_run.add_argument("--long-read-preset", default="map-ont")
     parser_run.add_argument("--rnaseq-preset", default="sr")
-    parser_run.add_argument("--long-read-depth", type=float, default=50.0)
+    parser_run.add_argument("--long-read-depth", type=float, default=100.0)
+    parser_run.add_argument("--max-reads", type=int, default=80)
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")

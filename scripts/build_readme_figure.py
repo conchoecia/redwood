@@ -15,10 +15,10 @@ from redwood.renderer import draw_dataset_panel
 
 
 DATASETS = [
-    ("human", "Human", "Homo sapiens", 24),
-    ("mouse", "Mouse", "Mus musculus", 36),
-    ("drosophila", "Fly", "Drosophila melanogaster", 44),
-    ("sponge", "Sponge", "Ephydatia muelleri", 56),
+    ("human", "Human", "Homo sapiens", 80),
+    ("mouse", "Mouse", "Mus musculus", 80),
+    ("drosophila", "Fly", "Drosophila melanogaster", 80),
+    ("sponge", "Sponge", "Ephydatia muelleri", 80),
 ]
 
 

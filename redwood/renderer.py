@@ -303,7 +303,7 @@ def add_feature_label(ax, feature: dict[str, object], length: int, radius: float
         ha="center",
         va="center",
         color=color,
-        fontsize=4.8,
+        fontsize=5.0,
         rotation=rotation,
         rotation_mode="anchor",
         fontweight="bold",
@@ -312,28 +312,31 @@ def add_feature_label(ax, feature: dict[str, object], length: int, radius: float
 
 
 def add_position_labels(ax, length: int, color: str) -> None:
-    step = 5000 if length >= 10000 else 2500
+    step = 1000 if length <= 30000 else 2500
     for bp in range(0, length, step):
         angle = theta(bp, length)
+        major = bp % 5000 == 0
+        outer_radius = 1.205 if major else 1.192
         x0, y0 = polar_xy(1.172, angle)
-        x1, y1 = polar_xy(1.205, angle)
-        ax.plot([x0, x1], [y0, y1], color=color, lw=0.7, alpha=0.58)
-        x, y = polar_xy(1.238, angle)
-        rotation = angle - 90
-        if 90 < angle < 270:
-            rotation += 180
-        ax.text(
-            x,
-            y,
-            f"{bp:,} bp",
-            ha="center",
-            va="center",
-            color=color,
-            fontsize=5.2,
-            rotation=rotation,
-            rotation_mode="anchor",
-            alpha=0.86,
-        )
+        x1, y1 = polar_xy(outer_radius, angle)
+        ax.plot([x0, x1], [y0, y1], color=color, lw=0.7 if major else 0.55, alpha=0.62 if major else 0.36)
+        if major:
+            x, y = polar_xy(1.238, angle)
+            rotation = angle - 90
+            if 90 < angle < 270:
+                rotation += 180
+            ax.text(
+                x,
+                y,
+                f"{bp:,} bp",
+                ha="center",
+                va="center",
+                color=color,
+                fontsize=5.2,
+                rotation=rotation,
+                rotation_mode="anchor",
+                alpha=0.86,
+            )
 
 
 def read_spans(path: Path | None, true_length: int, max_reads: int) -> list[tuple[int, int]]:
@@ -375,7 +378,7 @@ def draw_circular_plot(
     rnaseq_bam: Path | None = None,
     title: str | None = None,
     subtitle: str | None = None,
-    max_reads: int = 48,
+    max_reads: int = 80,
     dark: bool = False,
     rnaseq_style: str = "coverage",
 ) -> None:
@@ -384,7 +387,7 @@ def draw_circular_plot(
     rna_forward = "#aeb9c5" if dark else "#3b414a"
     rna_reverse = "#d79466" if dark else "#b85f36"
     tick_color = "#9aa8b7" if dark else "#667085"
-    label_color = "#f4f7fb" if dark else "#0f172a"
+    label_color = "#ffffff"
     rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
@@ -393,7 +396,6 @@ def draw_circular_plot(
     ax.set_xticks([])
     ax.set_yticks([])
 
-    ax.add_patch(Wedge((0, 0), 0.24, 0, 360, width=0.012, color=tick_color, alpha=0.28))
     add_position_labels(ax, length, tick_color)
     add_rnaseq_depth_track(
         ax,
@@ -415,15 +417,15 @@ def draw_circular_plot(
                 int(feature["start"]),
                 int(feature["stop"]),
                 length,
-                1.086,
-                0.024,
+                1.094,
+                0.030,
                 color=color,
                 alpha=0.95,
                 linewidth=0,
             )
             continue
-        radius = 1.020 + (float(feature.get("lane", 0)) * 0.038)
-        width = 0.035
+        radius = 1.030 + (float(feature.get("lane", 0)) * 0.048)
+        width = 0.046
         add_directional_feature(
             ax,
             int(feature["start"]),
@@ -474,7 +476,7 @@ def plot_file(
     rnaseq_bam: Path | None = None,
     title: str | None = None,
     subtitle: str | None = None,
-    max_reads: int = 48,
+    max_reads: int = 80,
     dark: bool = False,
     rnaseq_style: str = "coverage",
     transparent: bool = False,
@@ -530,7 +532,7 @@ def run_plot(args) -> None:
         rnaseq_bam=Path(args.rnaseq_bam) if args.rnaseq_bam else None,
         title=title,
         subtitle=subtitle,
-        max_reads=getattr(args, "max_reads", 48),
+        max_reads=getattr(args, "max_reads", 80),
         dark=getattr(args, "dark", False),
         rnaseq_style=rnaseq_style,
         transparent=args.transparent,
