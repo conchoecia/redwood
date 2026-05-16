@@ -35,6 +35,7 @@ Plot long reads, annotation, and RNA-seq depth:
 
 ```bash
 redwood plot \
+  --mito-fasta mitochondrion.fa \
   --main-bam reads.bam \
   --rnaseq-bam rnaseq.bam \
   --gff annotation.gff \
@@ -44,6 +45,9 @@ redwood plot \
 ```
 
 Input BAM files must be indexed with `samtools index`.
+
+The README example figure is built with the same plotting backend used by
+`redwood plot` and `redwood run`.
 
 ## End-to-End Workflow
 

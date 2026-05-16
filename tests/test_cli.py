@@ -11,6 +11,7 @@ def test_plot_parser_defaults():
     assert args.doubled == []
     assert args.transparent is True
     assert args.verbose is False
+    assert args.mito_fasta is None
 
 
 def test_end_to_end_parser_accepts_references_and_reads():
@@ -42,9 +43,21 @@ def test_end_to_end_parser_accepts_references_and_reads():
 
 def test_plot_parser_accepts_extra_tracks():
     parser = build_parser()
-    args = parser.parse_args(["plot", "--gff", "annotation.gff", "--extra-track", "at", "metrics"])
+    args = parser.parse_args(
+        [
+            "plot",
+            "--gff",
+            "annotation.gff",
+            "--mito-fasta",
+            "mito.fa",
+            "--extra-track",
+            "at",
+            "metrics",
+        ]
+    )
 
     assert args.extra_tracks == ["at", "metrics"]
+    assert args.mito_fasta.endswith("mito.fa")
 
 
 def test_advanced_parser_accepts_mapping_steps():

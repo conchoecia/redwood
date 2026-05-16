@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pysam
 
-from .plot import run as run_plot
+from .renderer import run_plot
 
 
 MITO_HEADER_TOKENS = (
@@ -428,6 +428,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 raise SystemExit("plotting without long reads requires --gff so the mitochondrial length is known")
             doubled = ["main"] if long_bam else []
             plot_args = argparse.Namespace(
+                mito_fasta=str(args.mito_fasta),
                 main_bam=str(long_bam) if long_bam else None,
                 rnaseq_bam=str(rnaseq_bam) if rnaseq_bam else None,
                 gff=str(args.gff) if args.gff else None,
@@ -444,6 +445,11 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 sort="ALNLEN",
                 ticks=args.ticks,
                 transparent=args.transparent,
+                max_reads=48,
+                dark=False,
+                title=None,
+                subtitle=None,
+                extra_tracks=[],
             )
             run_plot(plot_args)
             results["plot_base"] = str(outdir / args.plot_name)

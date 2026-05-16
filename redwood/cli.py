@@ -7,7 +7,7 @@ import io
 import os
 from pathlib import Path
 
-from .plot import run
+from .renderer import run_plot
 from .workflow import (
     map_long,
     map_rnaseq,
@@ -66,10 +66,19 @@ def build_parser():
         nargs="+",
     )
     parser_plot.add_argument("--gff", metavar="gff", action=FullPaths)
+    parser_plot.add_argument(
+        "--mito-fasta",
+        "--reference-fasta",
+        dest="mito_fasta",
+        metavar="fasta",
+        action=FullPaths,
+        help="Mitochondrial FASTA used for sequence-derived tracks.",
+    )
     parser_plot.add_argument("-I", "--interlace", action="store_true", default=False)
     parser_plot.add_argument("-i", "--invert", action="store_true", default=False)
     parser_plot.add_argument("-L", "--log", action="store_true", default=False)
     parser_plot.add_argument("-M", "--main-bam", dest="main_bam", metavar="mainbam", action=FullPaths)
+    parser_plot.add_argument("--max-reads", type=int, default=48)
     parser_plot.add_argument("--no-timestamp", dest="no_timestamp", action="store_true")
     parser_plot.add_argument(
         "-o",
@@ -98,6 +107,9 @@ def build_parser():
         default="ALNLEN",
     )
     parser_plot.add_argument("--ticks", type=int, nargs="+", default=[0, 10, 100, 1000])
+    parser_plot.add_argument("--title")
+    parser_plot.add_argument("--subtitle")
+    parser_plot.add_argument("--dark", action="store_true", help="Render using the dark plot theme.")
     parser_plot.add_argument(
         "--extra-track",
         dest="extra_tracks",
@@ -121,7 +133,7 @@ def build_parser():
         action="store_true",
         help="Show progress/debug output from the plotter.",
     )
-    parser_plot.set_defaults(func=run)
+    parser_plot.set_defaults(func=run_plot)
 
     parser_advanced = subparsers.add_parser(
         "advanced",
