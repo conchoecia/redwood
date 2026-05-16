@@ -210,18 +210,18 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
         x1, y1 = 1.19 * np.cos(np.deg2rad(angle)), 1.19 * np.sin(np.deg2rad(angle))
         ax.plot([x0, x1], [y0, y1], color=tick_color, lw=0.8, alpha=0.65)
 
-    add_rnaseq_depth_track(ax, rnaseq_depth, length, 1.055, 0.105, rna_color)
+    add_rnaseq_depth_track(ax, rnaseq_depth, length, 1.065, 0.079, rna_color)
 
     for feature in parse_gff(dataset_dir / manifest["annotation"]):
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")
-        radius = 1.025 if feature["type"] == "tRNA" else 0.982
+        radius = 1.030 if feature["type"] == "tRNA" else 0.986
         width = 0.032 if feature["type"] == "tRNA" else 0.050
         add_arc(ax, int(feature["start"]), int(feature["stop"]), length, radius, width, color=color, alpha=0.95, linewidth=0)
 
-    add_at_track(ax, reference, 0.920, 0.962)
+    add_at_track(ax, reference, 0.918, 0.954)
 
     for row, (start, stop) in enumerate(read_spans(dataset_dir / manifest["bam"], length, max_reads)):
-        radius = 0.908 - (row * 0.0087)
+        radius = 0.894 - (row * 0.0087)
         add_arc(ax, start, stop, length, radius, 0.0058, color=read_color, alpha=0.72, linewidth=0)
 
     ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")
