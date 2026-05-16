@@ -70,14 +70,16 @@ def at_profile(reference: str, window: int = 201) -> list[float]:
     return profile
 
 
-def depth_profile(bam_path: Path, length: int) -> np.ndarray:
-    depth = np.zeros(length, dtype=float)
+def strand_depth_profiles(bam_path: Path, length: int) -> tuple[np.ndarray, np.ndarray]:
+    forward = np.zeros(length, dtype=float)
+    reverse = np.zeros(length, dtype=float)
     if not bam_path.exists():
-        return depth
+        return forward, reverse
     with pysam.AlignmentFile(bam_path, "rb") as bam:
         for read in bam.fetch(until_eof=True):
             if read.is_unmapped:
                 continue
+            depth = reverse if read.is_reverse else forward
             for start, stop in read.get_blocks():
                 start %= length
                 stop = min(stop, start + length)
@@ -86,7 +88,7 @@ def depth_profile(bam_path: Path, length: int) -> np.ndarray:
                 else:
                     depth[start:length] += 1
                     depth[0 : stop - length] += 1
-    return depth
+    return forward, reverse
 
 
 def add_at_track(ax, reference: str, inner_radius: float, outer_radius: float, image_size: int = 760) -> None:
@@ -107,38 +109,61 @@ def add_at_track(ax, reference: str, inner_radius: float, outer_radius: float, i
 
 def add_rnaseq_depth_track(
     ax,
-    depth: np.ndarray,
+    forward_depth: np.ndarray,
+    reverse_depth: np.ndarray,
     length: int,
     start_radius: float,
     track_width: float,
-    color: str,
+    forward_color: str,
+    reverse_color: str,
     bins: int = 900,
 ) -> None:
-    if len(depth) == 0 or np.max(depth) <= 0:
+    if len(forward_depth) == 0 or len(reverse_depth) == 0:
+        return
+    total_depth = forward_depth + reverse_depth
+    if np.max(total_depth) <= 0:
         return
     bins = min(bins, length)
-    transformed = np.log1p(depth)
-    max_value = float(np.max(transformed))
+    transformed_total = np.log1p(total_depth)
+    max_value = float(np.max(transformed_total))
     for bin_index in range(bins):
         start = int(bin_index * length / bins)
         stop = int((bin_index + 1) * length / bins)
         if stop <= start:
             continue
-        value = float(np.mean(transformed[start:stop]))
-        if value <= 0:
+        total_value = float(np.mean(transformed_total[start:stop]))
+        if total_value <= 0:
             continue
-        width = track_width * (value / max_value)
-        add_arc(
-            ax,
-            start,
-            stop,
-            length,
-            start_radius + width,
-            width,
-            color=color,
-            alpha=0.76,
-            linewidth=0,
-        )
+        width = track_width * (total_value / max_value)
+        forward_value = float(np.mean(forward_depth[start:stop]))
+        reverse_value = float(np.mean(reverse_depth[start:stop]))
+        total_raw = forward_value + reverse_value
+        forward_width = width * (forward_value / total_raw) if total_raw else 0
+        reverse_width = width - forward_width
+        if forward_width > 0:
+            add_arc(
+                ax,
+                start,
+                stop,
+                length,
+                start_radius + forward_width,
+                forward_width,
+                color=forward_color,
+                alpha=0.78,
+                linewidth=0,
+            )
+        if reverse_width > 0:
+            add_arc(
+                ax,
+                start,
+                stop,
+                length,
+                start_radius + forward_width + reverse_width,
+                reverse_width,
+                color=reverse_color,
+                alpha=0.82,
+                linewidth=0,
+            )
 
 
 def parse_gff(path: Path) -> list[dict[str, object]]:
@@ -190,10 +215,11 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
     reference = read_reference(dataset_dir / manifest["reference"])
     fg = "#eef4fb" if dark else "#111827"
     read_color = "#e9eef5" if dark else "#111111"
-    rna_color = "#d8e0ea" if dark else "#111111"
+    rna_forward = "#b9c6d3" if dark else "#2f343b"
+    rna_reverse = "#d79466" if dark else "#b85f36"
     tick_color = "#9aa8b7" if dark else "#667085"
     rnaseq_bam = dataset_dir / "rnaseq.mapped.bam"
-    rnaseq_depth = depth_profile(rnaseq_bam, length)
+    rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
     ax.set_xlim(-1.22, 1.22)
@@ -210,7 +236,7 @@ def draw_panel(ax, dataset_dir: Path, label: str, species: str, max_reads: int, 
         x1, y1 = 1.19 * np.cos(np.deg2rad(angle)), 1.19 * np.sin(np.deg2rad(angle))
         ax.plot([x0, x1], [y0, y1], color=tick_color, lw=0.8, alpha=0.65)
 
-    add_rnaseq_depth_track(ax, rnaseq_depth, length, 1.065, 0.079, rna_color)
+    add_rnaseq_depth_track(ax, rnaseq_forward, rnaseq_reverse, length, 1.065, 0.079, rna_forward, rna_reverse)
 
     for feature in parse_gff(dataset_dir / manifest["annotation"]):
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")
