@@ -45,45 +45,13 @@ redwood plot \
 
 Input BAM files must be indexed with `samtools index`.
 
-## Local Workflow
+## End-to-End Workflow
 
-`redwood` also includes workflow subcommands for building the BAMs and metrics
-used by a complete circular genome plot. These commands use local files and
-expect `minimap2` and `samtools` on `PATH` for mapping jobs.
-
-Prepare derived references:
-
-```bash
-redwood prepare-reference \
-  --mito-fasta mitochondrion.fa \
-  --nuclear-fasta nuclear.fa \
-  --outdir redwood-work
-```
-
-Map long reads to a doubled mitochondrial reference and select reads that span
-large fractions of the circular genome:
-
-```bash
-redwood map-long \
-  --mito-fasta mitochondrion.fa \
-  --long-reads ont.fastq.gz \
-  --outdir redwood-work \
-  --target-depth 50 \
-  --min-span-fraction 0.25
-```
-
-Map RNA-seq reads against a nuclear bait reference plus the mitochondrial
-sequence, then keep primary mitochondrial alignments:
-
-```bash
-redwood map-rnaseq \
-  --mito-fasta mitochondrion.fa \
-  --nuclear-fasta nuclear.fa \
-  --rnaseq-reads rna_1.fastq.gz rna_2.fastq.gz \
-  --outdir redwood-work
-```
-
-Run the full local workflow:
+`redwood run` builds the intermediate references and BAM files needed for a
+complete circular genome plot. Provide a mitochondrial genome, optional GFF3
+annotation, long reads, and RNA-seq reads. If RNA-seq reads are supplied, also
+provide a nuclear genome FASTA; mitochondrial-looking nuclear FASTA contigs are
+excluded before the mitochondrial FASTA is appended as the target.
 
 ```bash
 redwood run \
@@ -95,9 +63,15 @@ redwood run \
   --outdir redwood-work
 ```
 
-The workflow writes selected long-read BAMs, mitochondrial RNA-seq BAMs,
-`redwood.metrics.json`, `redwood.workflow.json`, and a plot output base under
-the requested output directory.
+The workflow maps long reads to a doubled mitochondrial reference, selects reads
+that span large fractions of the circular genome, maps RNA-seq reads against a
+nuclear bait reference plus the mitochondrial genome, keeps primary
+mitochondrial RNA-seq alignments, and writes `redwood.metrics.json`,
+`redwood.workflow.json`, and a plot output base under the requested output
+directory. It expects `minimap2` and `samtools` on `PATH`.
+
+For existing BAM files, use `redwood plot` directly. To summarize existing BAMs
+without plotting, use `redwood metrics`.
 
 The plotting CLI also accepts `--extra-track` declarations for newer plot
 styles, including `at`, `gc`, `rnaseq-strand`, and `metrics`. The legacy plotter
