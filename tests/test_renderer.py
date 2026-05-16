@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from redwood.renderer import plot_file
+from redwood.renderer import choose_position_label_step, plot_file
+
+
+def test_position_label_step_keeps_short_mitogenomes_labeled():
+    assert choose_position_label_step(12500) == 2000
+    assert choose_position_label_step(16569) == 2500
 
 
 def test_renderer_writes_plot_from_example_dataset(tmp_path):

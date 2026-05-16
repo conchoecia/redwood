@@ -311,11 +311,37 @@ def add_feature_label(ax, feature: dict[str, object], length: int, radius: float
     )
 
 
+def choose_position_label_step(length: int, max_degrees: float = 60.0) -> int:
+    max_bp = max(1, int(length * (max_degrees / 360)))
+    nice_steps = [
+        100,
+        200,
+        250,
+        500,
+        1000,
+        2000,
+        2500,
+        5000,
+        10000,
+        20000,
+        25000,
+        50000,
+        100000,
+        200000,
+        250000,
+        500000,
+        1000000,
+    ]
+    candidates = [step for step in nice_steps if step <= max_bp]
+    return max(candidates) if candidates else nice_steps[0]
+
+
 def add_position_labels(ax, length: int, color: str) -> None:
-    step = 1000 if length <= 30000 else 2500
-    for bp in range(0, length, step):
+    tick_step = 1000 if length <= 30000 else 2500
+    label_step = choose_position_label_step(length)
+    for bp in range(0, length, tick_step):
         angle = theta(bp, length)
-        major = bp % 5000 == 0
+        major = bp % label_step == 0
         outer_radius = 1.205 if major else 1.192
         x0, y0 = polar_xy(1.172, angle)
         x1, y1 = polar_xy(outer_radius, angle)
