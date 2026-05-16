@@ -11,3 +11,37 @@ def test_plot_parser_defaults():
     assert args.doubled == []
     assert args.transparent is True
     assert args.verbose is False
+
+
+def test_end_to_end_parser_accepts_references_and_reads():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "run",
+            "--mito-fasta",
+            "mito.fa",
+            "--nuclear-fasta",
+            "nuclear.fa",
+            "--long-reads",
+            "ont.fastq.gz",
+            "--rnaseq-reads",
+            "rna_1.fastq.gz",
+            "rna_2.fastq.gz",
+            "--outdir",
+            "redwood-out",
+        ]
+    )
+
+    assert args.command == "run"
+    assert str(args.mito_fasta) == "mito.fa"
+    assert str(args.nuclear_fasta) == "nuclear.fa"
+    assert [str(path) for path in args.long_reads] == ["ont.fastq.gz"]
+    assert [str(path) for path in args.rnaseq_reads] == ["rna_1.fastq.gz", "rna_2.fastq.gz"]
+    assert args.long_read_depth == 50.0
+
+
+def test_plot_parser_accepts_extra_tracks():
+    parser = build_parser()
+    args = parser.parse_args(["plot", "--gff", "annotation.gff", "--extra-track", "at", "metrics"])
+
+    assert args.extra_tracks == ["at", "metrics"]

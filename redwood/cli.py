@@ -5,8 +5,16 @@ import argparse
 import contextlib
 import io
 import os
+from pathlib import Path
 
 from .plot import run
+from .workflow import (
+    map_long,
+    map_rnaseq,
+    prepare_reference,
+    run_end_to_end,
+    write_metrics,
+)
 
 
 class FullPaths(argparse.Action):
@@ -91,6 +99,17 @@ def build_parser():
     )
     parser_plot.add_argument("--ticks", type=int, nargs="+", default=[0, 10, 100, 1000])
     parser_plot.add_argument(
+        "--extra-track",
+        dest="extra_tracks",
+        choices=["at", "gc", "rnaseq-strand", "metrics"],
+        default=[],
+        nargs="+",
+        help=(
+            "Declare optional tracks for newer plot styles. The legacy plotter "
+            "currently uses the default read, annotation, and RNA-seq depth tracks."
+        ),
+    )
+    parser_plot.add_argument(
         "-T",
         "--transparent",
         action="store_false",
@@ -103,6 +122,98 @@ def build_parser():
         help="Show progress/debug output from the plotter.",
     )
     parser_plot.set_defaults(func=run)
+
+    parser_prepare = subparsers.add_parser(
+        "prepare-reference",
+        help="write derived mitochondrial and RNA-seq bait references",
+    )
+    parser_prepare.add_argument("--mito-fasta", required=True, type=Path)
+    parser_prepare.add_argument("--nuclear-fasta", type=Path)
+    parser_prepare.add_argument("--outdir", required=True, type=Path)
+    parser_prepare.add_argument(
+        "--exclude-token",
+        action="append",
+        default=[],
+        help="Additional case-insensitive nuclear FASTA header token to exclude from RNA-seq bait references.",
+    )
+    parser_prepare.set_defaults(func=prepare_reference)
+
+    parser_long = subparsers.add_parser(
+        "map-long",
+        help="map long reads to a doubled mitochondrial reference and select redwood reads",
+    )
+    parser_long.add_argument("--mito-fasta", required=True, type=Path)
+    parser_long.add_argument("--long-reads", required=True, type=Path, nargs="+")
+    parser_long.add_argument("--outdir", required=True, type=Path)
+    parser_long.add_argument("--output-bam", type=Path)
+    parser_long.add_argument(
+        "--preset",
+        choices=["map-ont", "map-pb", "asm5", "asm10", "asm20"],
+        default="map-ont",
+        help="minimap2 preset for long-read mapping.",
+    )
+    parser_long.add_argument("--target-depth", type=float, default=50.0)
+    parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
+    parser_long.add_argument("--dry-run", action="store_true")
+    parser_long.set_defaults(func=map_long)
+
+    parser_rna = subparsers.add_parser(
+        "map-rnaseq",
+        help="map RNA-seq to nuclear bait plus mitochondrion and keep mitochondrial alignments",
+    )
+    parser_rna.add_argument("--mito-fasta", required=True, type=Path)
+    parser_rna.add_argument("--nuclear-fasta", required=True, type=Path)
+    parser_rna.add_argument("--rnaseq-reads", required=True, type=Path, nargs="+")
+    parser_rna.add_argument("--outdir", required=True, type=Path)
+    parser_rna.add_argument("--output-bam", type=Path)
+    parser_rna.add_argument("--preset", default="sr", help="minimap2 preset for RNA-seq mapping.")
+    parser_rna.add_argument("--exclude-token", action="append", default=[])
+    parser_rna.add_argument("--dry-run", action="store_true")
+    parser_rna.set_defaults(func=map_rnaseq)
+
+    parser_metrics = subparsers.add_parser(
+        "metrics",
+        help="summarize long-read and RNA-seq mitochondrial support metrics",
+    )
+    parser_metrics.add_argument("--mito-fasta", required=True, type=Path)
+    parser_metrics.add_argument("--long-bam", type=Path)
+    parser_metrics.add_argument("--rnaseq-bam", type=Path)
+    parser_metrics.add_argument("--output", required=True, type=Path)
+    parser_metrics.set_defaults(func=write_metrics)
+
+    parser_run = subparsers.add_parser(
+        "run",
+        help="run an end-to-end local redwood workflow from references and reads",
+    )
+    parser_run.add_argument("--mito-fasta", required=True, type=Path)
+    parser_run.add_argument(
+        "--nuclear-fasta",
+        type=Path,
+        help="Whole-genome FASTA used as RNA-seq bait; mitochondrial-looking contigs are excluded.",
+    )
+    parser_run.add_argument("--gff", type=Path, help="Optional GFF3 annotation for the mitochondrial genome.")
+    parser_run.add_argument("--long-reads", type=Path, nargs="+")
+    parser_run.add_argument("--rnaseq-reads", type=Path, nargs="+")
+    parser_run.add_argument("--outdir", required=True, type=Path)
+    parser_run.add_argument("--long-read-preset", default="map-ont")
+    parser_run.add_argument("--rnaseq-preset", default="sr")
+    parser_run.add_argument("--long-read-depth", type=float, default=50.0)
+    parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
+    parser_run.add_argument("--exclude-token", action="append", default=[])
+    parser_run.add_argument("--plot-name", default="redwood")
+    parser_run.add_argument("--skip-plot", action="store_true")
+    parser_run.add_argument("--dry-run", action="store_true")
+    parser_run.add_argument("--dpi", default=600, type=int)
+    parser_run.add_argument("--fileform", default=["png"], nargs="+")
+    parser_run.add_argument("--ticks", type=int, nargs="+", default=[0, 10, 100, 1000])
+    parser_run.add_argument(
+        "-T",
+        "--transparent",
+        action="store_false",
+        default=True,
+        help="Use an opaque background. Default output background is transparent.",
+    )
+    parser_run.set_defaults(func=run_end_to_end)
     return parser
 
 
@@ -112,7 +223,7 @@ def main(argv=None):
     if not hasattr(args, "func"):
         parser.print_help()
         return 2
-    if args.verbose:
+    if args.command != "plot" or getattr(args, "verbose", False):
         args.func(args)
     else:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
