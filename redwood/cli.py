@@ -9,6 +9,9 @@ from pathlib import Path
 
 from .plot import run
 from .workflow import (
+    map_long,
+    map_rnaseq,
+    prepare_reference,
     run_end_to_end,
     write_metrics,
 )
@@ -119,6 +122,61 @@ def build_parser():
         help="Show progress/debug output from the plotter.",
     )
     parser_plot.set_defaults(func=run)
+
+    parser_advanced = subparsers.add_parser(
+        "advanced",
+        help="lower-level workflow steps for debugging and custom pipelines",
+    )
+    advanced_subparsers = parser_advanced.add_subparsers(dest="advanced_command")
+    advanced_subparsers.required = True
+
+    parser_prepare = advanced_subparsers.add_parser(
+        "prepare-reference",
+        help="write derived mitochondrial and RNA-seq bait references",
+    )
+    parser_prepare.add_argument("--mito-fasta", required=True, type=Path)
+    parser_prepare.add_argument("--nuclear-fasta", type=Path)
+    parser_prepare.add_argument("--outdir", required=True, type=Path)
+    parser_prepare.add_argument(
+        "--exclude-token",
+        action="append",
+        default=[],
+        help="Additional case-insensitive nuclear FASTA header token to exclude from RNA-seq bait references.",
+    )
+    parser_prepare.set_defaults(func=prepare_reference)
+
+    parser_long = advanced_subparsers.add_parser(
+        "map-long",
+        help="map long reads to a doubled mitochondrial reference and select redwood reads",
+    )
+    parser_long.add_argument("--mito-fasta", required=True, type=Path)
+    parser_long.add_argument("--long-reads", required=True, type=Path, nargs="+")
+    parser_long.add_argument("--outdir", required=True, type=Path)
+    parser_long.add_argument("--output-bam", type=Path)
+    parser_long.add_argument(
+        "--preset",
+        choices=["map-ont", "map-pb", "asm5", "asm10", "asm20"],
+        default="map-ont",
+        help="minimap2 preset for long-read mapping.",
+    )
+    parser_long.add_argument("--target-depth", type=float, default=50.0)
+    parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
+    parser_long.add_argument("--dry-run", action="store_true")
+    parser_long.set_defaults(func=map_long)
+
+    parser_rna = advanced_subparsers.add_parser(
+        "map-rnaseq",
+        help="map RNA-seq to nuclear bait plus mitochondrion and keep mitochondrial alignments",
+    )
+    parser_rna.add_argument("--mito-fasta", required=True, type=Path)
+    parser_rna.add_argument("--nuclear-fasta", required=True, type=Path)
+    parser_rna.add_argument("--rnaseq-reads", required=True, type=Path, nargs="+")
+    parser_rna.add_argument("--outdir", required=True, type=Path)
+    parser_rna.add_argument("--output-bam", type=Path)
+    parser_rna.add_argument("--preset", default="sr", help="minimap2 preset for RNA-seq mapping.")
+    parser_rna.add_argument("--exclude-token", action="append", default=[])
+    parser_rna.add_argument("--dry-run", action="store_true")
+    parser_rna.set_defaults(func=map_rnaseq)
 
     parser_metrics = subparsers.add_parser(
         "metrics",

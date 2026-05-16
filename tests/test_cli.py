@@ -45,3 +45,23 @@ def test_plot_parser_accepts_extra_tracks():
     args = parser.parse_args(["plot", "--gff", "annotation.gff", "--extra-track", "at", "metrics"])
 
     assert args.extra_tracks == ["at", "metrics"]
+
+
+def test_advanced_parser_accepts_mapping_steps():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "advanced",
+            "map-long",
+            "--mito-fasta",
+            "mito.fa",
+            "--long-reads",
+            "ont.fastq.gz",
+            "--outdir",
+            "redwood-work",
+        ]
+    )
+
+    assert args.command == "advanced"
+    assert args.advanced_command == "map-long"
+    assert str(args.mito_fasta) == "mito.fa"

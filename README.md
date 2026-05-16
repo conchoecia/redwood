@@ -73,6 +73,15 @@ directory. It expects `minimap2` and `samtools` on `PATH`.
 For existing BAM files, use `redwood plot` directly. To summarize existing BAMs
 without plotting, use `redwood metrics`.
 
+Lower-level workflow steps are available under `redwood advanced` for debugging
+or custom pipelines:
+
+```bash
+redwood advanced prepare-reference --help
+redwood advanced map-long --help
+redwood advanced map-rnaseq --help
+```
+
 The plotting CLI also accepts `--extra-track` declarations for newer plot
 styles, including `at`, `gc`, `rnaseq-strand`, and `metrics`. The legacy plotter
 currently renders the default read, annotation, and RNA-seq depth tracks.
