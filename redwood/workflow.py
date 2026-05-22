@@ -96,11 +96,48 @@ def write_fasta(path: Path, name: str, sequence: str) -> None:
             handle.write(sequence[start : start + 80] + "\n")
 
 
-def write_doubled_mito_reference(mito_fasta: Path, output: Path) -> tuple[str, int]:
+def write_multi_mito_reference(mito_fasta: Path, output: Path, copies: int) -> tuple[str, int]:
+    """Write a head-to-tail tandem reference of ``copies`` mitogenome copies.
+
+    A read that circles the genome multiple times only aligns as one
+    continuous alignment when the reference holds enough tandem copies to
+    contain it end to end.
+    """
     name, sequence = first_fasta_record(mito_fasta)
     short_name = name.split()[0]
-    write_fasta(output, short_name, sequence + sequence)
+    write_fasta(output, short_name, sequence * max(1, int(copies)))
     return short_name, len(sequence)
+
+
+def write_doubled_mito_reference(mito_fasta: Path, output: Path) -> tuple[str, int]:
+    return write_multi_mito_reference(mito_fasta, output, 2)
+
+
+def longest_read_length(reads: list[Path]) -> int:
+    """Return the longest sequence length across FASTA/FASTQ read files."""
+    import gzip
+
+    longest = 0
+    for path in reads:
+        p = Path(path)
+        opener = gzip.open if p.suffix == ".gz" else open
+        with opener(p, "rt") as handle:
+            head = handle.readline()
+            handle.seek(0)
+            if head.startswith("@"):
+                for i, line in enumerate(handle):
+                    if i % 4 == 1:
+                        longest = max(longest, len(line.strip()))
+            else:
+                current = 0
+                for line in handle:
+                    if line.startswith(">"):
+                        longest = max(longest, current)
+                        current = 0
+                    else:
+                        current += len(line.strip())
+                longest = max(longest, current)
+    return longest
 
 
 def should_skip_bait_header(header: str, extra_tokens: list[str]) -> bool:
@@ -336,13 +373,25 @@ def prepare_reference(args: argparse.Namespace) -> None:
 
 def map_long(args: argparse.Namespace) -> dict[str, object]:
     outdir = Path(args.outdir)
-    ref = outdir / "references" / "mitochondrion.doubled.fa"
-    _, sequence_length = write_doubled_mito_reference(Path(args.mito_fasta), ref)
+    long_reads = [Path(path) for path in args.long_reads]
+    _, mito_sequence = first_fasta_record(Path(args.mito_fasta))
+    sequence_length = len(mito_sequence)
+
+    # Size the tandem reference so the longest read fits in one alignment.
+    copies_arg = str(getattr(args, "copies", "auto")).lower()
+    if copies_arg in ("", "auto"):
+        longest = longest_read_length(long_reads)
+        copies = max(2, (longest // sequence_length) + 2)
+    else:
+        copies = max(2, int(copies_arg))
+
+    ref = outdir / "references" / f"mitochondrion.{copies}x.fa"
+    write_multi_mito_reference(Path(args.mito_fasta), ref, copies)
     raw_bam = outdir / "long_reads.raw.bam"
     output_bam = Path(args.output_bam) if args.output_bam else outdir / "long_reads.redwood.bam"
-    map_reads(ref, [Path(path) for path in args.long_reads], raw_bam, args.preset, dry_run=args.dry_run)
+    map_reads(ref, long_reads, raw_bam, args.preset, dry_run=args.dry_run)
     if args.dry_run:
-        return {"raw_bam": str(raw_bam), "output_bam": str(output_bam)}
+        return {"raw_bam": str(raw_bam), "output_bam": str(output_bam), "copies": copies}
     selection = select_long_circular_reads(
         raw_bam,
         output_bam,
@@ -350,7 +399,12 @@ def map_long(args: argparse.Namespace) -> dict[str, object]:
         args.target_depth,
         args.min_span_fraction,
     )
-    return {"raw_bam": str(raw_bam), "output_bam": str(output_bam), "selection": selection}
+    return {
+        "raw_bam": str(raw_bam),
+        "output_bam": str(output_bam),
+        "copies": copies,
+        "selection": selection,
+    }
 
 
 def map_rnaseq(args: argparse.Namespace) -> dict[str, object]:

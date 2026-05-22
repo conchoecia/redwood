@@ -79,6 +79,44 @@ def build_parser():
     parser_plot.add_argument("-L", "--log", action="store_true", default=False)
     parser_plot.add_argument("-M", "--main-bam", dest="main_bam", metavar="mainbam", action=FullPaths)
     parser_plot.add_argument("--max-reads", type=int, default=80)
+    parser_plot.add_argument(
+        "--max-internal-gap",
+        dest="max_internal_gap",
+        type=int,
+        default=50,
+        help="Largest internal alignment gap (bp) a multi-pass read may "
+        "contain; a larger gap is treated as adapter/chimeric junk.",
+    )
+    parser_plot.add_argument(
+        "--min-pass-fraction",
+        dest="min_pass_fraction",
+        type=float,
+        default=1.0,
+        help="Minimum alignment span, in circle lengths, for a read to be "
+        "drawn as a multi-pass spiral; 1.0 = any read covering the full circle.",
+    )
+    parser_plot.add_argument(
+        "--wrap-ramp",
+        dest="wrap_ramp",
+        type=float,
+        default=0.12,
+        help="Fraction of each spiral turn used for the diagonal step-down "
+        "into the next rung.",
+    )
+    parser_plot.add_argument(
+        "--no-multipass",
+        dest="no_multipass",
+        action="store_true",
+        help="Disable multi-pass spiral detection; draw every read single-pass.",
+    )
+    parser_plot.add_argument(
+        "--min-indel",
+        dest="min_indel",
+        type=int,
+        default=10,
+        help="Smallest insertion/deletion (bp) drawn as an indel on a read "
+        "arc; shorter ones render as match. Use 1 to draw every indel.",
+    )
     parser_plot.add_argument("--no-timestamp", dest="no_timestamp", action="store_true")
     parser_plot.add_argument(
         "-o",
@@ -167,9 +205,17 @@ def build_parser():
     parser_long.add_argument("--output-bam", type=Path)
     parser_long.add_argument(
         "--preset",
-        choices=["map-ont", "map-pb", "asm5", "asm10", "asm20"],
+        choices=["map-ont", "map-pb", "map-hifi", "asm5", "asm10", "asm20"],
         default="map-ont",
         help="minimap2 preset for long-read mapping.",
+    )
+    parser_long.add_argument(
+        "--copies",
+        default="auto",
+        help="Tandem copies in the mapping reference: an integer, or 'auto' "
+        "to size from the longest read. Reads that circle the genome "
+        "multiple times need a reference long enough to hold them in one "
+        "continuous alignment.",
     )
     parser_long.add_argument("--target-depth", type=float, default=100.0)
     parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
