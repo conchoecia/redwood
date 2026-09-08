@@ -172,12 +172,14 @@ def test_classes_accept_original_phase_table_and_validate(fixture):
     assert segments[0].read_class == "unclassified"
 
 
-def test_linear_renderer_and_rna_never_wrap(fixture):
+@pytest.mark.parametrize("style", ["redwood", "diagnostic"])
+def test_linear_renderer_and_rna_never_wrap(fixture, style):
     directory, fasta, reference = fixture
     bam = write_bam(directory, [("full", 0, "1000M", 0), ("reverse", 998, "1M1N", 16)])
     forward, reverse = rna_depth(bam, reference)
     assert forward[0] == 1 and reverse[998] == 1 and reverse[999] == 0 and reverse[0] == 0
     assert main(["plot", "--topology", "linear", "--mito-fasta", str(fasta),
+                 "--linear-style", style,
                  "--main-bam", str(bam), "--rnaseq-bam", str(bam), "--depth-scale", "log",
                  "--fileform", "png", "svg", "pdf", "--no-timestamp", "--dpi", "60",
                  "-o", str(directory / "linear")]) == 0
@@ -185,6 +187,55 @@ def test_linear_renderer_and_rna_never_wrap(fixture):
         assert (directory / f"linear.{ext}").stat().st_size > 0
     summary = json.loads((directory / "linear.evidence.json").read_text())
     assert summary["display"]["reads"] == 2
+    assert summary["display"]["style"] == style
+
+
+def test_production_composition_windows_do_not_join_termini():
+    from redwood.linear_redwood import linear_base_fraction
+
+    profile = linear_base_fraction("A" * 101 + "G" * 101)
+    assert len(profile) == 202
+    assert profile[0] == 1 and profile[-1] == 0
+    assert profile[100] == pytest.approx(101 / 201)
+    np.testing.assert_array_equal(linear_base_fraction("ATGC"), [.5] * 4)
+    np.testing.assert_array_equal(linear_base_fraction("GGCC", "GC"), [1] * 4)
+
+
+def test_production_packing_preserves_split_segments_and_read_indels(fixture):
+    from redwood.linear_redwood import pack_linear_reads, read_polygons
+    from redwood.renderer import REDWOOD_GRADIENT
+
+    directory, _, reference = fixture
+    bam = write_bam(directory, [("split", 0, "100M100S", 0),
+                                ("split", 900, "100S100M", 2048),
+                                ("middle", 400, "100M", 0),
+                                ("overlap", 980, "5M20I5M", 0)])
+    segments, _ = read_segments(bam, reference)
+    placed, rows = pack_linear_reads(segments, reference.length)
+    assert rows == 2
+    assert {name: row for name, _, row in placed} == {"split": 0, "middle": 0, "overlap": 1}
+    assert len(next(group for name, group, _ in placed if name == "split")) == 2
+    segment = next(s for s in segments if s.name == "overlap")
+    polygons, colors = read_polygons(segment, 1, .02, 10, REDWOOD_GRADIENT)
+    assert min(x for polygon in polygons for x, _ in polygon) == 980.5
+    assert max(x for polygon in polygons for x, _ in polygon) == 990.5
+    assert tuple(colors[0]) != tuple(colors[-1])
+
+
+def test_production_optional_bands_and_class_colors(fixture):
+    directory, fasta, _ = fixture
+    bam = write_bam(directory, [("full", 0, "1000M", 0)])
+    classes = directory / "classes.tsv"
+    classes.write_text("read\tclass\nfull\tmito\n")
+    assert main(["plot", "--topology", "linear", "--mito-fasta", str(fasta),
+                 "--main-bam", str(bam), "--read-classes", str(classes), "--read-color", "class",
+                 "--linear-track", "depth", "--linear-track", "ends", "--linear-track", "clips",
+                 "--show-terminal-sequences", "--extra-track", "gc", "--dark",
+                 "--no-timestamp", "--dpi", "60", "-o", str(directory / "styled")]) == 0
+    summary = json.loads((directory / "styled.evidence.json").read_text())
+    assert summary["production_style"]["tracks"] == ["depth", "ends", "clips"]
+    assert summary["production_style"]["read_color"] == "class"
+    assert summary["production_style"]["read_rows"] == 1
 
 
 def test_annotation_only_and_empty_bam_are_supported(fixture):

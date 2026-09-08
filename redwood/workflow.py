@@ -535,6 +535,11 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
             doubled = ["main"] if long_bam and topology == "circular" else []
             plot_args = argparse.Namespace(
                 topology=topology,
+                linear_style=getattr(args, "linear_style", "redwood"),
+                linear_track=getattr(args, "linear_track", []),
+                read_color=getattr(args, "read_color", "wood"),
+                show_terminal_sequences=getattr(args, "show_terminal_sequences", False),
+                rnaseq_label=getattr(args, "rnaseq_label", "RNA depth"),
                 read_classes=getattr(args, "read_classes", None),
                 terminal_window=getattr(args, "terminal_window", 30),
                 junction_window=getattr(args, "junction_window", 300),

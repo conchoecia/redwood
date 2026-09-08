@@ -297,6 +297,16 @@ def add_topology_argument(parser):
 
 
 def add_linear_arguments(parser):
+    parser.add_argument("--linear-style", choices=["redwood", "diagnostic"], default="redwood",
+                        help="Linear figure style: Redwood's existing tracks unrolled (default), or diagnostic panels.")
+    parser.add_argument("--linear-track", choices=["depth", "ends", "clips", "none"], action="append",
+                        help="Production evidence bands (default: depth). Repeat for depth/ends/clips, or use none.")
+    parser.add_argument("--read-color", choices=["wood", "class"], default="wood",
+                        help="Production linear reads: original wood gradient (default) or supplied class colors.")
+    parser.add_argument("--show-terminal-sequences", action="store_true",
+                        help="Include the first/last 30 bases beneath the production linear figure.")
+    parser.add_argument("--rnaseq-label", default="RNA depth",
+                        help="RNA track label in production linear figures (default: RNA depth).")
     parser.add_argument("--read-classes", type=Path,
                         help="Linear plots: TSV with read and class columns, optional locus/nuclear_locus.")
     parser.add_argument("--terminal-window", type=int, default=30,

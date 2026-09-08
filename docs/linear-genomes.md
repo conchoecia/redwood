@@ -28,12 +28,59 @@ For a compact annotation figure, omit `--main-bam` and `--read-classes`.
 For annotation and depth without individual reads, use `--max-reads 0`.
 `--hide-evidence` hides the endpoint and clip panels while keeping their exports.
 An optional `--rnaseq-bam` adds primary RNA alignment depth; add
-`--extra-track rnaseq-strand` to show the strands separately.
+`--extra-track rnaseq-strand` for strand coloring.
 
-Gene/CDS/RNA arrows sit above or below the reference by strand. Redundant gene
+### Production style (default)
+
+`--linear-style redwood` unrolls the existing circular plot's visual encodings:
+
+* Bark-colored RNA depth (when supplied), with the same `log(1 + depth)` scaling.
+* Green CDS/gene arrows, red rRNAs, pink tRNAs, and white labels inside features
+  where they fit. Forward/reverse strands have separate lanes.
+* The warm AT strip, using the circular renderer's colormap and robust 2nd–98th
+  percentile color range. The 201 bp sequence windows shorten at linear termini
+  instead of wrapping. `--extra-track gc` adds a GC strip.
+* Tightly packed read rows with the original heartwood-to-sapwood gradient and
+  the same insertion/deletion width ratios as regular circular reads.
+* The existing light/dark backgrounds, subtle frame, coordinate ticks, and
+  centered reference-length label.
+
+The production figure also includes **long-read depth** when a main BAM is
+provided, and a thin **ITR/cap lane** from GFF repeat/misc-feature annotations.
+The depth band shows total unique-read depth; per-class values are exported.
+RNA and long-read depth are separate tracks with their own ranges.
+Use `--rnaseq-label 'Sample RNA'` to identify the RNA sample in the production
+figure. RNA depth counts aligned bases in primary records; barcode/UMI tags do
+not trigger deduplication.
+
+Add the full set of compact diagnostics in Redwood's bark colors:
+
+```bash
+redwood plot --topology linear --mito-fasta mitochondrion.fa \
+  --gff annotation.gff3 --main-bam long_reads.bam \
+  --linear-track depth --linear-track ends --linear-track clips \
+  --fileform pdf svg png --no-timestamp -T -o figures/linear_evidence
+```
+
+`--linear-track` replaces the default depth-only selection; repeat it to select
+several bands, or use `--linear-track none` for only the original core tracks and
+terminal annotations. Start/end and clip counts use mirrored `log(1 + count)`
+histograms, with scales and clip categories printed on the figure.
+`--show-terminal-sequences` adds the first/last 30 bases below the plot.
+
+### Diagnostic style
+
+`--linear-style diagnostic` retains the separate annotation, read-class depth,
+endpoint, and clip panels with explicit axes and full terminal sequences.
+This view colors reads by the supplied classes. RNA strand mode shows separate
+curves here. The evidence calculations and exports are identical in both styles.
+
+### Annotation handling
+
+Gene/CDS/RNA arrows are separated by strand. Redundant gene
 parents at the same interval as a CDS or RNA are suppressed. Standalone genes,
 including partial ITR copies, remain visible. `repeat_region` and `misc_feature`
-annotations have separate lanes; inverted repeats with opposite GFF strands
+annotations are shown in terminal lanes; inverted repeats with opposite GFF strands
 have mirrored arrows. Features that overhang a terminus are clipped at the plot
 boundary without wrapping to the other end. The original coordinates are not
 changed. A GFF `##sequence-region`, when present, must describe the whole FASTA
@@ -53,8 +100,10 @@ read_003	chimera	chr7:8000-9000
 `locus` is optional; `nuclear_locus` is also accepted, so the original
 `phase_reads_fast.py` tables can be used directly. Additional columns are
 ignored. Missing read IDs are `unclassified`. Contradictory duplicate labels
-are rejected. Classes color the read panel and the per-class depth curves;
-legends report **unique read counts**, not alignment counts. These are supplied
+are rejected. In production figures, `--read-color class` replaces the wood
+gradient with class colors and adds a count legend. Diagnostic figures color
+reads and per-class depth curves automatically. Legends report **unique read
+counts**, not alignment counts. These are supplied
 labels, not classifications inferred by Redwood. Recent NUMTs identical to
 mtDNA cannot be separated by SNPs alone.
 
@@ -66,11 +115,14 @@ depth cap. `--depth-scale log` uses a `log(1 + depth)` transform so zero-depth
 positions remain visible.
 
 `--max-reads` limits **only the read panel**, choosing the longest alignments by
-default and grouping the selected reads by class. Supplementary segments of a
-selected read share its row. This is a display subset, not a population-frequency
+default. Production figures pack nonoverlapping reads on shared rows; diagnostic
+figures group reads by class. Supplementary segments of a selected read share
+its row. This is a display subset, not a population-frequency
 estimate. `--sort POS` sorts by increasing start instead. Insertions and
-deletions use `--min-indel` (default 10 bp); soft clips are dots at the aligned
-endpoints, without inventing reference sequence outside the molecule.
+deletions use `--min-indel` (default 10 bp). Production reads encode these as
+width changes, matching the circular plot. Diagnostic reads use insertion ticks,
+deletion gaps, and soft-clip endpoint dots. Neither invents reference sequence
+outside the molecule; the production clip band summarizes unaligned tails.
 
 Explicit `--query` clauses retain the legacy column definitions:
 
@@ -107,8 +159,9 @@ TSV positions are 1-based; junction endpoints are inclusive. Endpoint tracks
 count **alignments**, including supplementary segments. The uniform endpoint
 expectation is therefore `alignment_count * window / reference_length`.
 They show reference-coordinate left/right endpoints, independent of read strand.
-Plot bars aggregate `--bin-size` bases (default 25) on a symmetric logarithmic
-axis; exact terminal counts use `--terminal-window` (default 30 bp).
+Plot bars aggregate `--bin-size` bases (default 25), using mirrored `log(1 + count)`
+heights in production or symmetric logarithmic axes in diagnostic panels.
+Exact terminal counts use `--terminal-window` (default 30 bp).
 
 Clips of 1–99 bp and at least 100 bp are separate categories by default;
 `--clip-threshold` changes that cutoff. These are length categories only.

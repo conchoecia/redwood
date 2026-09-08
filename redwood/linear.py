@@ -217,6 +217,11 @@ def run_linear_plot(args):
         selected = select_display_segments(segments, reference.length, getattr(args, "query", None),
                                            getattr(args, "sort", "ALNLEN"), args.max_reads)
     rna = rna_depth(args.rnaseq_bam, reference) if args.rnaseq_bam else None
+    if getattr(args, "linear_style", "redwood") == "redwood":
+        from .linear_redwood import draw_redwood_linear
+
+        fig = draw_redwood_linear(args, reference, features, selected, evidence, rna)
+        return save_linear_figure(fig, args, evidence, selected)
     panels = [("annotation", 2.0)]
     if selected:
         panels.append(("reads", 2.2))
@@ -316,6 +321,10 @@ def run_linear_plot(args):
             footer += " No supplementary alignments in input."
     fig.text(.085, .12 / height, footer, fontsize=6.3, color=fg, wrap=True)
     fig.subplots_adjust(left=.085, right=.98, top=1 - 1.0 / height, bottom=.68 / height, hspace=.5)
+    save_linear_figure(fig, args, evidence, selected)
+
+
+def save_linear_figure(fig, args, evidence, selected):
     base = args.BASENAME or "redwood"
     if not args.no_timestamp:
         base = f"{base}_{timestamp()}"
@@ -328,7 +337,9 @@ def run_linear_plot(args):
         plt.close(fig)
     if evidence:
         evidence["summary"]["display"] = dict(reads=len({s.name for s in selected}),
-                                              max_reads=args.max_reads, query=getattr(args, "query", None))
+                                              max_reads=args.max_reads, query=getattr(args, "query", None),
+                                              style=getattr(args, "linear_style", "redwood"),
+                                              extra_tracks=getattr(args, "linear_track", []))
         write_evidence(base, evidence)
         for warning in evidence["summary"]["warnings"]:
             print(f"redwood: {warning}", file=sys.stderr)

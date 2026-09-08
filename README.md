@@ -55,8 +55,12 @@ redwood plot --topology linear --mito-fasta mitochondrion.fa \
   --fileform pdf svg png --no-timestamp -T -o linear_mitogenome
 ```
 
-The horizontal view includes strand-aware annotations, read-class depth,
-alignment endpoints, and soft clips, with JSON/TSV evidence exports.
+The production view unrolls Redwood's wood-gradient reads, green/red/pink
+annotations, warm AT-composition strip, and optional RNA depth. Linear additions
+include long-read depth and terminal repeat/cap annotations. Add
+`--linear-track depth --linear-track ends --linear-track clips` for compact
+diagnostic bands in the same style, or `--linear-style diagnostic` for separate
+diagnostic panels. Both styles export JSON/TSV evidence.
 See [linear genome figures](docs/linear-genomes.md) for annotation-only figures,
 query filters, evidence definitions, and `redwood run --topology linear`.
 
