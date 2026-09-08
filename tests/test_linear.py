@@ -306,6 +306,48 @@ def test_production_gradient_preserves_indels_without_slicing_reads(fixture):
     assert len(group.findall(".//svg:path", ns)) == 1
 
 
+def test_dense_gradient_pdf_keeps_rows_separate_and_svg_editable(fixture):
+    import shutil
+    import subprocess
+    import xml.etree.ElementTree as ET
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    from redwood.linear import save_linear_figure
+    from redwood.linear_redwood import add_gradient_read
+    from redwood.renderer import REDWOOD_GRADIENT
+
+    directory, _, reference = fixture
+    bam = write_bam(directory, [("identical", 0, "1000M", 0)])
+    segment = read_segments(bam, reference)[0][0]
+    fig, ax = plt.subplots(figsize=(13, 3))
+    fig.subplots_adjust(left=.02, right=.98, bottom=.05, top=.95)
+    ax.set(xlim=(0, 1000), ylim=(0, 3))
+    ax.axis("off")
+    for i in range(80):
+        add_gradient_read(ax, segment, .4 + i * .027, .027 * .64, 10, REDWOOD_GRADIENT)
+    args = build_parser().parse_args(["plot", "--fileform", "pdf", "svg", "--dpi", "100",
+                                     "--no-timestamp", "-T", "-o", str(directory / "dense")])
+    save_linear_figure(fig, args, None, [])
+    pdf = (directory / "dense.pdf").read_bytes()
+    assert b"/Subtype /Image" in pdf and b"/ShadingType 4" not in pdf
+    root = ET.parse(directory / "dense.svg").getroot()
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    assert len(root.findall(".//svg:linearGradient", ns)) == 80
+    assert not root.findall(".//svg:image", ns)
+    if not shutil.which("pdftoppm"):
+        pytest.skip("poppler is needed for the PDF row-separation regression")
+    subprocess.run(["pdftoppm", "-singlefile", "-r", "130", "-png",
+                    str(directory / "dense.pdf"), str(directory / "rendered")], check=True)
+    with Image.open(directory / "rendered.png") as image:
+        pixels = np.asarray(image.convert("RGB"))
+    # There are no indels or sequence differences in this fixture. Previously
+    # clip-edge rounding merged these 80 identical rows into 11 thick bands.
+    ink = pixels[:, pixels.shape[1] // 2].mean(axis=1) < 170
+    runs = [len(run) for run in np.split(ink, np.flatnonzero(np.diff(ink)) + 1) if run[0]]
+    assert len(runs) == 80
+    assert max(runs) - min(runs) <= 1
+
+
 def test_production_optional_bands_and_class_colors(fixture):
     directory, fasta, _ = fixture
     bam = write_bam(directory, [("full", 0, "1000M", 0)])

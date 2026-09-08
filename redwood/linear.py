@@ -337,21 +337,38 @@ def run_linear_plot(args):
 
 
 def save_linear_figure(fig, args, evidence, selected):
+    from .linear_redwood import GradientRead
+
     base = args.BASENAME or "redwood"
     if not args.no_timestamp:
         base = f"{base}_{timestamp()}"
     Path(base).parent.mkdir(parents=True, exist_ok=True)
+    gradient_reads = fig.findobj(match=GradientRead)
+    pdf_read_dpi = None
     try:
         with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42, "svg.fonttype": "none"}):
             for fmt in args.fileform:
-                fig.savefig(f"{base}.{fmt}", format=fmt, dpi=args.dpi, transparent=args.transparent)
+                # PDF viewers can round the clip edges of adjacent gradient
+                # meshes into dark/thick bands. Composite this dense layer once
+                # at print resolution; SVG keeps its native vector gradients.
+                raster_reads = fmt.lower() == "pdf" and bool(gradient_reads)
+                for artist in gradient_reads:
+                    artist.set_rasterized(raster_reads)
+                dpi = max(600, args.dpi) if raster_reads else args.dpi
+                if raster_reads:
+                    pdf_read_dpi = dpi
+                fig.savefig(f"{base}.{fmt}", format=fmt, dpi=dpi, transparent=args.transparent)
     finally:
+        for artist in gradient_reads:
+            artist.set_rasterized(False)
         plt.close(fig)
     if evidence:
         evidence["summary"]["display"] = dict(reads=len({s.name for s in selected}),
                                               max_reads=args.max_reads, query=getattr(args, "query", None),
                                               style=getattr(args, "linear_style", "redwood"),
                                               extra_tracks=getattr(args, "linear_track", []))
+        if pdf_read_dpi is not None:
+            evidence["summary"]["display"]["pdf_read_raster_dpi"] = pdf_read_dpi
         write_evidence(base, evidence)
         for warning in evidence["summary"]["warnings"]:
             print(f"redwood: {warning}", file=sys.stderr)

@@ -7,6 +7,7 @@ the circular renderer. Layout and sequence windows never wrap the termini.
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+from matplotlib.artist import allow_rasterization
 from matplotlib.collections import PolyCollection, TriMesh
 from matplotlib.colors import to_hex, to_rgba
 from matplotlib.font_manager import FontProperties
@@ -84,8 +85,9 @@ def read_outline(segment, center, height, min_indel):
 
 
 class GradientRead(TriMesh):
-    """Use one native SVG gradient; other backends use vector Gouraud shading."""
+    """Native SVG gradients with shared interpolated rendering for PDF/PNG."""
 
+    @allow_rasterization
     def draw(self, renderer):
         from matplotlib.backends.backend_svg import RendererSVG
 
@@ -131,7 +133,8 @@ def add_gradient_read(ax, segment, center, height, min_indel, gradient):
     """Continuous vector shading clipped to the exact CIGAR silhouette.
 
     Two triangles per pair of color stops replace hundreds of solid slices.
-    PDF and SVG retain vector shading; PNG uses the same interpolated colors.
+    SVG retains vector shading. The PDF exporter composites the dense read
+    layer at print resolution; PNG uses the same interpolated colors.
     The wood gradient follows increasing reference coordinates, as before;
     it does not encode alignment strand or the physical ends of the read.
     """

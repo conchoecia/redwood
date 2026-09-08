@@ -20,7 +20,11 @@ redwood plot --topology linear \
   -o figures/mitochondrion
 ```
 
-PDF and SVG preserve vector tracks, and SVG retains editable text. `-T` gives
+SVG retains editable text and vector read gradients. PDF preserves vector text,
+annotations, and evidence curves, but composites the dense wood-gradient read
+panel at a minimum of 600 dpi to prevent viewer-dependent dark/thick bands.
+`--dpi` above 600 increases that resolution; PNG uses `--dpi` as supplied.
+Use SVG when editing individual read outlines is needed. `-T` gives
 an opaque background; the CLI otherwise defaults to transparency. `--dark`
 selects a dark theme. `--width` controls figure width in inches (default 13).
 
@@ -42,8 +46,8 @@ An optional `--rnaseq-bam` adds primary RNA alignment depth; add
   instead of wrapping. `--extra-track gc` adds a GC strip.
 * Tightly packed read rows with the original heartwood-to-sapwood gradient and
   the same insertion/deletion width ratios as regular circular reads. Each SVG
-  read is one outline with a native continuous gradient; PDF uses vector shading
-  clipped to that outline, instead of hundreds of solid color slices.
+  read is one outline with a native continuous gradient; the PDF read panel is
+  composited at print resolution instead of clipping separate vector meshes.
 * The existing light/dark backgrounds, subtle frame, coordinate ticks, and
   centered reference-length label.
 
