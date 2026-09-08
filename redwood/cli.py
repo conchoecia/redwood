@@ -146,6 +146,7 @@ def build_parser():
         dest="sort",
         choices=["ALNLEN", "TRULEN", "MAPLEN", "POS"],
         default="ALNLEN",
+        help="Circular read order; linear length ranking (POS uses ALNLEN). Linear rows always follow reference position.",
     )
     parser_plot.add_argument("--ticks", type=int, nargs="+", default=[0, 10, 100, 1000])
     parser_plot.add_argument("--title")
@@ -297,6 +298,10 @@ def add_topology_argument(parser):
 
 
 def add_linear_arguments(parser):
+    parser.add_argument("--linear-read-selection", choices=["terminal-balanced", "longest"],
+                        default="terminal-balanced",
+                        help="Linear read sample: longest reads balanced across left/right/both termini (default), "
+                             "or longest overall. Selection precedes coordinate sorting.")
     parser.add_argument("--linear-style", choices=["redwood", "diagnostic"], default="redwood",
                         help="Linear figure style: Redwood's existing tracks unrolled (default), or diagnostic panels.")
     parser.add_argument("--linear-track", choices=["depth", "ends", "clips", "none"], action="append",
@@ -310,7 +315,7 @@ def add_linear_arguments(parser):
     parser.add_argument("--read-classes", type=Path,
                         help="Linear plots: TSV with read and class columns, optional locus/nuclear_locus.")
     parser.add_argument("--terminal-window", type=int, default=30,
-                        help="Linear evidence: terminal window in bp (default: 30).")
+                        help="Linear read selection and evidence: terminal window in bp (default: 30).")
     parser.add_argument("--junction-window", type=int, default=300,
                         help="Linear evidence: distance from a terminus for split joins (default: 300).")
     parser.add_argument("--clip-threshold", type=int, default=100,

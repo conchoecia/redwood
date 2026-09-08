@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 import gzip
 import json
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
@@ -192,10 +192,56 @@ def read_segments(path, reference, classes=None):
     return segments, dict(counts)
 
 
-def select_display_segments(segments, length, query=None, sort="ALNLEN", max_reads=80):
-    """Preserve legacy query column definitions; limits affect the read panel only."""
+def representative_segment(group):
+    """Use the longest primary alignment, or a supplementary one if necessary.
+
+    Separate split segments must not masquerade as one end-to-end alignment.
+    """
+    return min(group, key=lambda s: (s.supplementary, -(s.stop - s.start), s.start, s.stop))
+
+
+def terminal_group(segment, length, window=30):
+    window = min(window, max(1, length // 2))
+    left, right = segment.start < window, segment.stop > length - window
+    return "both" if left and right else "left" if left else "right" if right else "internal"
+
+
+def pack_linear_reads(segments, length):
+    """Pack in coordinate order, keeping each read's split segments on one row."""
+    groups = defaultdict(list)
+    for segment in segments:
+        groups[segment.name].append(segment)
+    ordered = sorted(groups.items(), key=lambda item: (min(s.start for s in item[1]),
+                                                       max(s.stop for s in item[1]), item[0]))
+    rows, placed = [], []
+    pad = length * .004
+    for name, group in ordered:
+        intervals = merged_intervals((max(0, s.start - pad), min(length, s.stop + pad)) for s in group)
+        for row, occupied in enumerate(rows):
+            if not any(s1 < e2 and s2 < e1 for s1, e1 in intervals for s2, e2 in occupied):
+                occupied.extend(intervals)
+                break
+        else:
+            row = len(rows)
+            rows.append(list(intervals))
+        placed.append((name, sorted(group, key=lambda s: (s.start, s.stop, s.supplementary)), row))
+    return placed, len(rows)
+
+
+def select_display_segments(segments, length, query=None, sort="ALNLEN", max_reads=80,
+                            selection="terminal-balanced", terminal_window=30):
+    """Select read IDs by length/terminus first, then order by reference position.
+
+    Query clauses determine eligibility. All alignments of an eligible selected
+    read are retained, including supplementary segments that fail the query.
+    Display selection never filters the depth or evidence input.
+    """
     if max_reads < 0:
         raise ValueError("--max-reads must be nonnegative (0 hides the read panel)")
+    if terminal_window < 1:
+        raise ValueError("terminal window must be positive")
+    if selection not in {"terminal-balanced", "longest"}:
+        raise ValueError(f"unknown linear read selection: {selection}")
     rows = []
     for segment in segments:
         cigar = segment.cigar
@@ -211,9 +257,34 @@ def select_display_segments(segments, length, query=None, sort="ALNLEN", max_rea
     if query and list(query) != ["False"]:
         for clause in query:
             frame = frame.query(clause, engine="python")
-    frame = frame.sort_values([sort, "READ", "POS"], ascending=[sort == "POS", True, True], kind="stable")
-    names = set(frame["READ"].drop_duplicates().iloc[:max_reads])
-    return [segments[i] for i in frame.index if segments[i].name in names]
+    groups = defaultdict(list)
+    for segment in segments:
+        groups[segment.name].append(segment)
+    eligible = set(frame["READ"])
+    representatives = {name: representative_segment(group) for name, group in groups.items() if name in eligible}
+    # POS controls placement, never truncation. Selecting a coordinate prefix
+    # would silently exclude reads anchored at the other end of the reference.
+    rank = "ALNLEN" if sort == "POS" else sort
+    excluded_ops = {"ALNLEN": {1, 4, 5}, "MAPLEN": {1}, "TRULEN": set()}[rank]
+    ranked = sorted(representatives, key=lambda name: (
+        -sum(n for op, n in representatives[name].cigar if op not in excluded_ops), name))
+    if selection == "longest":
+        names = set(ranked[:max_reads])
+    else:
+        buckets = {key: deque() for key in ("left", "right", "both", "internal")}
+        for name in ranked:
+            buckets[terminal_group(representatives[name], length, terminal_window)].append(name)
+        names = set()
+        # Exclusive groups count spanning reads once. Redistribute empty slots
+        # among the remaining terminal groups before filling with internal reads.
+        while len(names) < max_reads and any(buckets[key] for key in ("left", "right", "both")):
+            for key in ("left", "right", "both"):
+                if buckets[key] and len(names) < max_reads:
+                    names.add(buckets[key].popleft())
+        while len(names) < max_reads and buckets["internal"]:
+            names.add(buckets["internal"].popleft())
+    return sorted((s for s in segments if s.name in names),
+                  key=lambda s: (s.start, s.stop, s.name, s.supplementary))
 
 
 def classify_junction(left, right, length, window):

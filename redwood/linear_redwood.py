@@ -6,8 +6,6 @@ the circular renderer. Layout and sequence windows never wrap the termini.
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 import matplotlib.pyplot as plt
 from matplotlib.collections import PolyCollection, TriMesh
 from matplotlib.colors import to_hex, to_rgba
@@ -19,7 +17,7 @@ from matplotlib.transforms import Affine2D
 import numpy as np
 
 from .linear import binned, class_colors
-from .linear_evidence import merged_intervals
+from .linear_evidence import pack_linear_reads
 from .renderer import (
     AT_COLORMAP, AT_RANGE, BARK_COLOR, BARK_COLOR_ALT, CIGAR_OP_WIDTH, FEATURE_COLORS, READ_ARC_WIDTH,
     REDWOOD_GRADIENT, _cigar_width_profile, choose_position_label_step,
@@ -35,26 +33,6 @@ def linear_base_fraction(sequence, composition="AT", window=201):
     positions = np.arange(len(sequence))
     starts, stops = np.maximum(0, positions - half), np.minimum(len(sequence), positions + half + 1)
     return (at[stops] - at[starts]) / (stops - starts)
-
-
-def pack_linear_reads(segments, length):
-    """Pack nonoverlapping reads; keep a read's supplementary segments together."""
-    groups = defaultdict(list)
-    for segment in segments:
-        groups[segment.name].append(segment)
-    rows, placed = [], []
-    pad = length * .004
-    for name, group in groups.items():
-        intervals = merged_intervals((max(0, s.start - pad), min(length, s.stop + pad)) for s in group)
-        for row, occupied in enumerate(rows):
-            if not any(s1 < e2 and s2 < e1 for s1, e1 in intervals for s2, e2 in occupied):
-                occupied.extend(intervals)
-                break
-        else:
-            row = len(rows)
-            rows.append(list(intervals))
-        placed.append((name, group, row))
-    return placed, len(rows)
 
 
 def annotation_rows(features):

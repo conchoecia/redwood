@@ -10,6 +10,7 @@ from redwood.linear import feature_polygon, rna_depth
 from redwood.linear_evidence import (
     Reference, classify_junction, collect_evidence, load_annotations, load_classes,
     load_reference, read_segments, select_display_segments, write_evidence,
+    pack_linear_reads, representative_segment, terminal_group,
 )
 from redwood.workflow import map_long, prepare_reference, run_end_to_end
 
@@ -155,6 +156,56 @@ def test_query_and_display_limit_do_not_change_evidence(fixture):
         select_display_segments(segments, 1000, max_reads=-1)
 
 
+def test_terminal_selection_balances_longest_reads_before_coordinate_sorting(fixture):
+    directory, _, reference = fixture
+    bam = write_bam(directory, [
+        ("left_long", 0, "900M", 0), ("left_short", 0, "850M", 16),
+        ("left_unused", 0, "700M", 0),
+        ("right_long", 100, "900M", 16), ("right_short", 150, "850M", 0),
+        ("right_unused", 300, "700M", 0),
+        ("both_long", 0, "1000M", 0), ("both_short", 1, "999M", 16),
+        ("both_unused", 2, "998M", 0), ("internal", 50, "900M", 0),
+    ])
+    segments, _ = read_segments(bam, reference)
+    selected = select_display_segments(segments, 1000, max_reads=6)
+    assert {s.name for s in selected} == {
+        "left_long", "left_short", "right_long", "right_short", "both_long", "both_short"}
+    assert [(s.start, s.stop) for s in selected] == sorted((s.start, s.stop) for s in selected)
+    assert selected == select_display_segments(list(reversed(segments)), 1000, max_reads=6, sort="POS")
+    assert [s.name for s in select_display_segments(segments, 1000, max_reads=3, selection="longest")] == [
+        "both_long", "both_short", "both_unused"]
+    # Empty groups give their slots to other termini; internal reads fill only
+    # after the terminal candidates are exhausted.
+    no_both = [s for s in segments if not s.name.startswith("both")]
+    five = select_display_segments(no_both, 1000, max_reads=5)
+    assert sum(s.name.startswith("left") for s in five) == 3
+    assert sum(s.name.startswith("right") for s in five) == 2
+    assert len(select_display_segments(no_both, 1000, max_reads=80)) == len(no_both)
+
+
+def test_terminal_selection_keeps_supplementary_segments_without_counting_a_split_as_full(fixture):
+    directory, _, reference = fixture
+    bam = write_bam(directory, [("split", 0, "600M400S", 0),
+                                ("split", 900, "900S100M", 2048),
+                                ("right", 400, "600M", 16)])
+    segments, _ = read_segments(bam, reference)
+    selected = select_display_segments(segments, 1000, ["ALNLEN >= 500"], max_reads=1)
+    assert len(selected) == 2 and {s.name for s in selected} == {"split"}
+    assert terminal_group(representative_segment(selected), 1000) == "left"
+    assert terminal_group(replace(selected[0], start=30, stop=970), 1000) == "internal"
+
+
+def test_linear_packing_orders_starts_then_ends_and_reuses_free_rows(fixture):
+    directory, _, reference = fixture
+    bam = write_bam(directory, [("long", 0, "900M", 0), ("short", 0, "100M", 0),
+                                ("middle", 400, "100M", 16), ("right", 800, "200M", 16)])
+    segments, _ = read_segments(bam, reference)
+    placed, rows = pack_linear_reads(list(reversed(segments)), 1000)
+    assert [name for name, _, _ in placed] == ["short", "long", "middle", "right"]
+    assert {name: row for name, _, row in placed} == {"short": 0, "long": 1, "middle": 0, "right": 0}
+    assert rows == 2
+
+
 def test_classes_accept_original_phase_table_and_validate(fixture):
     directory, _, reference = fixture
     path = directory / "classes.tsv"
@@ -188,6 +239,7 @@ def test_linear_renderer_and_rna_never_wrap(fixture, style):
     summary = json.loads((directory / "linear.evidence.json").read_text())
     assert summary["display"]["reads"] == 2
     assert summary["display"]["style"] == style
+    assert summary["read_selection"]["method"] == "terminal-balanced"
 
 
 def test_production_composition_windows_do_not_join_termini():
@@ -312,9 +364,10 @@ def test_linear_run_passes_topology_to_plot_and_metrics(fixture, monkeypatch):
     monkeypatch.setattr("redwood.workflow.map_long", mapped)
     args = build_parser().parse_args(["run", "--topology", "linear", "--mito-fasta", str(fasta),
                                      "--long-reads", "unused.fastq", "--outdir", str(directory / "run"),
-                                     "--dpi", "60", "--max-reads", "0"])
+                                     "--dpi", "60", "--max-reads", "0", "--linear-read-selection", "longest"])
     result = run_end_to_end(args)
     assert result["metrics"]["topology"] == "linear"
     summary = json.loads((directory / "run/redwood.evidence.json").read_text())
     assert summary["reads"] == 1 and summary["display"]["reads"] == 0
+    assert summary["read_selection"]["method"] == "longest"
     assert (directory / "run/redwood.png").exists()

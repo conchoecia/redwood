@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,7 +16,8 @@ import pysam
 from .functions import timestamp
 from .linear_evidence import (
     collect_evidence, load_annotations, load_classes, load_reference,
-    read_segments, select_display_segments, write_evidence,
+    pack_linear_reads, read_segments, representative_segment, select_display_segments,
+    terminal_group, write_evidence,
 )
 
 
@@ -111,12 +112,9 @@ def draw_annotations(ax, features, length, fg, width):
 
 
 def draw_reads(ax, segments, colors, length, min_indel, fg):
-    grouped = defaultdict(list)
-    for s in segments:
-        grouped[s.name].append(s)
-    groups = sorted(grouped.items(), key=lambda item: item[1][0].read_class)
+    groups, row_count = pack_linear_reads(segments, length)
     lines, line_colors, deletions, insertions, clips = [], [], [], [], []
-    for lane, (_, group) in enumerate(groups):
+    for _, group, lane in groups:
         for s in group:
             color = colors[s.read_class]
             pos = s.start + .5
@@ -144,7 +142,7 @@ def draw_reads(ax, segments, colors, length, min_indel, fg):
         ax.scatter(*zip(*insertions), marker="|", s=8, linewidths=.5, color=fg)
     if clips:
         ax.scatter(*zip(*clips), marker=".", s=3, color=fg, zorder=4)
-    ax.set_ylim(max(len(groups), 1), -1)
+    ax.set_ylim(max(row_count, 1), -1)
     ax.set_yticks([])
     ax.set_ylabel(f"Reads\n{len(groups):,} shown", fontsize=9)
     ax.set_title("Soft clips: endpoint dots   ·   insertions: ticks   ·   deletions/skips: dotted gaps",
@@ -215,7 +213,21 @@ def run_linear_plot(args):
         evidence = collect_evidence(segments, reference, counts, args.terminal_window,
                                     args.junction_window, args.clip_threshold)
         selected = select_display_segments(segments, reference.length, getattr(args, "query", None),
-                                           getattr(args, "sort", "ALNLEN"), args.max_reads)
+                                           getattr(args, "sort", "ALNLEN"), args.max_reads,
+                                           getattr(args, "linear_read_selection", "terminal-balanced"),
+                                           args.terminal_window)
+        groups = defaultdict(list)
+        for segment in selected:
+            groups[segment.name].append(segment)
+        evidence["summary"]["read_selection"] = {
+            "method": getattr(args, "linear_read_selection", "terminal-balanced"),
+            "ranking": "ALNLEN" if getattr(args, "sort", "ALNLEN") == "POS" else getattr(args, "sort", "ALNLEN"),
+            "order": "reference start, then end; pack nonoverlapping reads",
+            "terminal_window": min(args.terminal_window, max(1, reference.length // 2)),
+            "terminal_groups": dict(Counter(terminal_group(representative_segment(group), reference.length,
+                                                           args.terminal_window) for group in groups.values())),
+            "read_ids": list(groups),
+        }
     rna = rna_depth(args.rnaseq_bam, reference) if args.rnaseq_bam else None
     if getattr(args, "linear_style", "redwood") == "redwood":
         from .linear_redwood import draw_redwood_linear

@@ -79,7 +79,8 @@ baseline and is a count per bin.
 `--linear-style diagnostic` retains the separate annotation, read-class depth,
 endpoint, and clip panels with explicit axes and full terminal sequences.
 This view colors reads by the supplied classes. RNA strand mode shows separate
-curves here. The evidence calculations and exports are identical in both styles.
+curves here. Both styles select the same reads and pack them by reference
+position. The evidence calculations and exports are identical in both styles.
 
 ### Annotation handling
 
@@ -120,12 +121,32 @@ bases (`M`, `=`, `X`), excluding deletions and reference skips; it has no pileup
 depth cap. `--depth-scale log` uses a `log(1 + depth)` transform so zero-depth
 positions remain visible.
 
-`--max-reads` limits **only the read panel**, choosing the longest alignments by
-default. Production figures pack nonoverlapping reads on shared rows; diagnostic
-figures group reads by class. Supplementary segments of a selected read share
-its row. This is a display subset, not a population-frequency
-estimate. `--sort POS` sorts by increasing start instead. Insertions and
-deletions use `--min-indel` (default 10 bp). Production reads encode these as
+`--max-reads` limits **only the read panel**. Linear selection happens before
+coordinate sorting, so taking the first displayed rows cannot bias the sample
+toward the left terminus. The default `--linear-read-selection terminal-balanced`
+selects the longest alignments in turn from three exclusive groups: left-only,
+right-only, and spanning both termini. A read reaches a terminus when its
+alignment boundary falls within `--terminal-window` bases (default 30).
+Strand does not change which reference end is reached. Empty groups give their
+slots to the remaining terminal groups; internal reads fill any slots left after
+all terminal candidates are exhausted. A read is counted once, using its longest
+primary alignment (or longest supplementary alignment if no primary is present).
+Separate split segments do not qualify as a single end-to-end alignment.
+
+`--linear-read-selection longest` selects the longest reads overall instead.
+By default, length ranking uses `ALNLEN`; `--sort MAPLEN` or `--sort TRULEN`
+changes the length measure used for selection. In linear mode, `--sort POS`
+retains `ALNLEN` ranking rather than selecting a prefix of the coordinates.
+
+After selection, both linear styles arrange reads by increasing leftmost
+alignment start, then rightmost end, with read name breaking exact ties.
+Nonoverlapping reads can share a row. All supplementary segments of a selected
+read are retained on its row, even if a segment did not itself pass the query.
+This is a display subset, not a population-frequency estimate. The evidence
+JSON records the selection method, terminal groups, and selected read IDs.
+Circular selection and ordering are unchanged.
+
+Insertions and deletions use `--min-indel` (default 10 bp). Production reads encode these as
 width changes, matching the circular plot. Diagnostic reads use insertion ticks,
 deletion gaps, and soft-clip endpoint dots. Neither invents reference sequence
 outside the molecule; the production clip band summarizes unaligned tails.
@@ -146,7 +167,8 @@ Explicit `--query` clauses retain the legacy column definitions:
 | `READ`, `CLASS` | Read name and supplied class |
 
 For example, `--query "ALNLEN >= 10000" "MAPLEN <= reflength"` applies both
-clauses to the displayed alignment rows. Depth and evidence are unaffected by
+clauses to read eligibility; a read qualifies when any segment passes all clauses.
+Depth and evidence are unaffected by
 queries and display limits. Linear plots default to no query, so full-length
 reads and short reads on small genomes are retained. Use a BAM subset that
 retains supplementary alignments if the evidence should describe one population.

@@ -536,6 +536,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
             plot_args = argparse.Namespace(
                 topology=topology,
                 linear_style=getattr(args, "linear_style", "redwood"),
+                linear_read_selection=getattr(args, "linear_read_selection", "terminal-balanced"),
                 linear_track=getattr(args, "linear_track", []),
                 read_color=getattr(args, "read_color", "wood"),
                 show_terminal_sequences=getattr(args, "show_terminal_sequences", False),
