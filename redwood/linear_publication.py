@@ -179,7 +179,7 @@ def draw_publication_linear(args, reference, features, selected, evidence, rna):
     ticks = [pos for pos in ticks if pos in (1, length) or
              (length - pos) / length * plot_width > end_width + text_width(f"{pos / 1000:g}", family, 6.5) / 2 + 4]
     for pos in ticks:
-        text(pos, 7, "0.001" if pos == 1 else f"{pos / 1000:g}", size=6.5,
+        text(pos, 7, "1 bp" if pos == 1 else f"{pos / 1000:g}", size=6.5,
              ha="left" if pos == 1 else "right" if pos == length else "center")
         ax.vlines(pos, 12, 15, color=fg, linewidth=max(thin, .5))
     if getattr(args, "panel_label", None):

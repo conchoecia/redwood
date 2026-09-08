@@ -42,6 +42,8 @@ def test_all_annotation_names_are_readable_without_collisions(layout):
     resolve_linear_layout(args)
     fig = draw_publication_linear(args, reference, features, [], None, None)
     fig.canvas.draw()
+    axis_text = {text.get_text() for text in fig.axes[0].texts}
+    assert "1 bp" in axis_text and "0.001" not in axis_text
     labels = [text for text in fig.axes[0].texts if (text.get_gid() or "").startswith("annotation_label_")]
     assert sorted(t.get_text() for t in labels) == sorted(f["name"] for f in features)
     assert {t.get_fontsize() for t in labels} == {7}
