@@ -1,0 +1,99 @@
+{
+  "name": "hydra",
+  "label": "Hydra oligactis",
+  "topology": "linear",
+  "reference_accession": "NC_010214.1",
+  "fasta_header": "NC_010214.1 Hydra oligactis mitochondrion, complete genome",
+  "run_accession": "SRR18362010",
+  "bioproject": "PRJNA816482",
+  "platform": "ont",
+  "study": "https://doi.org/10.1101/gr.277040.122",
+  "fastq_urls": [
+    "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR183/010/SRR18362010/SRR18362010_1.fastq.gz"
+  ],
+  "reference": "reference.fa",
+  "annotation": "annotation.gff",
+  "bam": "reads.mapped.bam",
+  "bam_index": "reads.mapped.bam.bai",
+  "bam_reference": "NC_010214.1",
+  "sequence_length": 16314,
+  "doubled_reference": false,
+  "records_scanned_per_fastq": [
+    10000
+  ],
+  "fastq_prefix_sha256": "be1758b3eb916ea2c2259700e921b222c20e10ee3d87feac1f9a5b3c80c7c276",
+  "fastq_prefix_records_sha256": "50139c06c318f97fc649eb10587bd328907d0800c6dca4aea886e9dd6debea2d",
+  "record_checksum_format": "Concatenated @read_name\\nsequence\\n+\\nquality\\n; FASTQ header comments excluded",
+  "source_sha256": {
+    "fasta": "474c325021f9fb17a54a04726cdaf8045a47730aa23bde733229c32e8963ce0c",
+    "gff3": "31cc135bf1e3ead4b4c16a321f3227ccf1cd95bde87179bd4a09000b697b18a4",
+    "gbwithparts": "8216d79add0a38b9eee1caf4340f607dab2ae7d96bd3b519ae6470de6358f919"
+  },
+  "fixture_sha256": {
+    "reference.fa": "465aec1dda014f526aecb3d675026429dfd5fe9756fa06532bddef5f8b376ed1",
+    "annotation.gff": "0ef6739248c1e0acd768bfd464430c20f410a963fbfb5d3589b2a72faf05fbe3",
+    "reads.mapped.bam": "d6ca455d70739e716c14a223f1306789df3ddbbd5082b89d8c5fd9a2d917c1f2"
+  },
+  "mapped_reads": 38,
+  "mapped_alignments": 38,
+  "primary_alignments": 38,
+  "primary_aligned_bases": 384692,
+  "mean_primary_depth": 23.58,
+  "mapping_options": "-ax map-ont -Y --secondary=no",
+  "minimap2_version": "2.30-r1287",
+  "selection": "All target-mapped primary and supplementary records from a bounded public FASTQ prefix; display uses 30 terminal-balanced reads",
+  "ont_preprocessing": {
+    "method": "Redwood reprocess_ont_bam with default terminal-window adapters, followed by remapping",
+    "audit": "trimming.tsv",
+    "parameters": {
+      "adapters": {
+        "5p": [
+          "AATGTACTTCGTTCAGTTACGTATTGCT",
+          "ACTTCGTTCAGTTACGTATTGC"
+        ],
+        "3p": [
+          "GCAATACGTAACTGAACGAAGT",
+          "AGCAATACGTAACTGAACGAAGTACATT"
+        ]
+      },
+      "minimum_overlap": 12,
+      "error_rate": 0.1,
+      "end_window": 100,
+      "threads": 4
+    },
+    "counts": {
+      "reads": 38,
+      "trimmed_read_count": 31,
+      "removed_bases": 953,
+      "removed_primary_aligned_bases": 6,
+      "mapped_after": 38,
+      "unmapped_after": 0,
+      "endpoint_changes": 2
+    },
+    "tools": {
+      "cutadapt": "5.2",
+      "pysam": "0.24.1",
+      "samtools": "1.24",
+      "minimap2": "2.30-r1287"
+    }
+  },
+  "repeat_annotation": {
+    "method": "Longest exact match between the first 2000 reference bases and reverse complement of the last 2000; exact core only",
+    "intervals_1based_inclusive": [
+      [
+        68,
+        1341,
+        "+"
+      ],
+      [
+        14827,
+        16100,
+        "-"
+      ]
+    ],
+    "terminal_caps": "Not annotated in this public example"
+  },
+  "interpretation": "Public reference and read sample are from different source specimens; a plotting fixture, not a new assembly or proof of complete physical termini. No nuclear co-mapping/NUMT classification is performed.",
+  "redwood_command": "redwood plot --topology linear --mito-fasta reference.fa --gff annotation.gff --main-bam reads.mapped.bam --linear-layout two-column --max-reads 30 --terminal-window 100 --linear-track depth --linear-track ends --linear-track clips --fileform pdf svg png --no-timestamp -T -o hydra_redwood",
+  "display_terminal_window_bp": 100
+}

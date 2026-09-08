@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "redwood"
 dynamic = ["version"]
-description = "Circular genome plots derived from pauvre's redwood plotter."
+description = "Circular and linear genome plots derived from pauvre's redwood plotter."
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "GPL-3.0-or-later"}

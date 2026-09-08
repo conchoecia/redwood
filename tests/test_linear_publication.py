@@ -65,6 +65,21 @@ def test_generic_repeat_does_not_acquire_terminal_cap_identity():
     plt.close(fig)
 
 
+@pytest.mark.parametrize("kind,name,attributes,present,absent", [
+    ("repeat_region", "ITR core", {"rpt_type": "inverted"}, "ITR", "Cap"),
+    ("misc_feature", "terminal cap", {}, "Cap", "ITR"),
+])
+def test_terminal_legend_only_names_supplied_feature_types(kind, name, attributes, present, absent):
+    args = build_parser().parse_args(["plot"])
+    resolve_linear_layout(args)
+    feature = dict(name=name, start=0, stop=100, type=kind, strand="+", attributes=attributes)
+    fig = draw_publication_linear(args, Reference("mito", "ACGT" * 1000), [feature], [], None, None)
+    texts = {t.get_text() for t in fig.axes[0].texts + fig.texts}
+    assert present in texts
+    assert absent not in texts and "ITR / cap" not in texts
+    plt.close(fig)
+
+
 def test_multi_axes_svg_gradients_are_unique_and_read_width_floor_is_physical(tmp_path):
     segment = Segment("read", 0, 100, False, False, 60, [(0, 40), (2, 20), (0, 40)],
                       [(0, 40), (60, 100)], 0, 80, 80, 0, 0, False, "all", "")

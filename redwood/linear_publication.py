@@ -204,15 +204,23 @@ def draw_publication_linear(args, reference, features, selected, evidence, rna):
         if key == "termini":
             itr_caps = all((f["type"] == "repeat_region" and f["attributes"].get("rpt_type") == "inverted") or
                            (f["type"] == "misc_feature" and "cap" in f["name"].lower()) for f in terminal)
-            label("ITR / cap" if itr_caps else "Features", top + height / 2)
+            has_repeat = any(f["type"] == "repeat_region" for f in terminal)
+            has_feature = any(f["type"] == "misc_feature" for f in terminal)
+            track_label = ("ITR / cap" if has_repeat and has_feature else
+                           "ITR" if has_repeat else "Cap") if itr_caps else "Features"
+            label(track_label, top + height / 2)
             for f in sorted(terminal, key=lambda f: f["type"] != "repeat_region"):
                 repeat = f["type"] == "repeat_region"
                 add_arrow(ax, f["start"], f["stop"], top + 9, 4 if repeat else 7,
                           f["strand"], length, BARK_COLOR_ALT if repeat else REDWOOD_GRADIENT[0], 1)
             # Legend uses shapes and text, placed in the otherwise empty center.
-            items = [("ITR" if itr_caps else "Repeat", BARK_COLOR_ALT, 4),
-                     ("Cap" if itr_caps else "Feature", REDWOOD_GRADIENT[0], 7)]
-            for offset, (name, color, h) in zip((-27, 9), items):
+            items = []
+            if has_repeat:
+                items.append(("ITR" if itr_caps else "Repeat", BARK_COLOR_ALT, 4))
+            if has_feature:
+                items.append(("Cap" if itr_caps else "Feature", REDWOOD_GRADIENT[0], 7))
+            offsets = (-27, 9) if len(items) == 2 else (-12,)
+            for offset, (name, color, h) in zip(offsets, items):
                 x = length / 2 + offset / plot_width * length
                 ax.add_patch(Rectangle((x, top + 4 - h / 2), 7 / plot_width * length, h,
                                        facecolor=color, edgecolor="none"))
