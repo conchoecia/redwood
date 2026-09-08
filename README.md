@@ -163,6 +163,38 @@ the light and dark previews from the committed datasets without downloading read
 python scripts/build_readme_figure.py
 ```
 
+## How to cite
+
+If you use Redwood in your research, please cite the paper describing the
+original `pauvre redwood` implementation:
+
+> Schultz DT, Eizenga JM, Corbett-Detig RB, Francis WR, Christianson LM,
+> Haddock SHD. 2020. Conserved novel ORFs in the mitochondrial genome of the
+> ctenophore *Beroe forskalii*. **PeerJ** 8:e8356.
+> [doi:10.7717/peerj.8356](https://doi.org/10.7717/peerj.8356)
+
+Please also report the [Redwood repository](https://github.com/conchoecia/redwood)
+and the version or Git commit used. The standalone package includes features
+added after that paper, including linear mitochondrial genome plotting.
+
+BibTeX:
+
+```bibtex
+@article{Schultz2020Beroe,
+  author  = {Schultz, Darrin T. and Eizenga, Jordan M. and
+             Corbett-Detig, Russell B. and Francis, Warren R. and
+             Christianson, Lynne M. and Haddock, Steven H. D.},
+  title   = {Conserved novel {ORFs} in the mitochondrial genome of the
+             ctenophore {Beroe forskalii}},
+  journal = {PeerJ},
+  year    = {2020},
+  volume  = {8},
+  pages   = {e8356},
+  doi     = {10.7717/peerj.8356},
+  url     = {https://doi.org/10.7717/peerj.8356}
+}
+```
+
 ## Notes
 
 This repository keeps the original redwood plotting lineage from
