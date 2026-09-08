@@ -827,6 +827,16 @@ def plot_file(
 
 
 def run_plot(args) -> None:
+    if getattr(args, "reprocess_ont", False):
+        from .ont import preprocess_plot
+
+        args = preprocess_plot(args)
+    if getattr(args, "topology", "circular") == "linear":
+        from .linear import run_linear_plot
+
+        return run_linear_plot(args)
+    if getattr(args, "read_classes", None):
+        raise ValueError("--read-classes currently requires --topology linear")
     output_base = args.BASENAME or "redwood"
     rnaseq_style = "strand" if "rnaseq-strand" in getattr(args, "extra_tracks", []) else "coverage"
     reference_fasta = getattr(args, "mito_fasta", None) or getattr(args, "reference_fasta", None)
@@ -842,7 +852,7 @@ def run_plot(args) -> None:
         rnaseq_bam=Path(args.rnaseq_bam) if args.rnaseq_bam else None,
         title=title,
         subtitle=subtitle,
-        max_reads=getattr(args, "max_reads", 80),
+        max_reads=80 if getattr(args, "max_reads", None) is None else args.max_reads,
         dark=getattr(args, "dark", False),
         rnaseq_style=rnaseq_style,
         transparent=args.transparent,

@@ -25,13 +25,13 @@ class FullPaths(argparse.Action):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="redwood",
-        description="Plot circular genome read, annotation, and depth tracks.",
+        description="Plot circular or linear genome read, annotation, and depth tracks.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     parser_plot = subparsers.add_parser(
         "plot",
-        help="make a redwood circular genome plot",
+        help="make a redwood genome plot",
     )
     parser_plot.add_argument(
         "-d",
@@ -43,6 +43,13 @@ def build_parser():
         help="Input BAMs mapped to a doubled circular reference. Accepts main, rnaseq, or both.",
     )
     parser_plot.add_argument("--dpi", metavar="dpi", default=600, type=int)
+    add_topology_argument(parser_plot)
+    add_linear_arguments(parser_plot)
+    parser_plot.add_argument("--reprocess-ont", action="store_true",
+                             help="Treat the main BAM as ONT: extract mapped molecules, trim adapters, and remap before plotting.")
+    parser_plot.add_argument("--ont-workdir", type=Path,
+                             help="New directory for ONT reads, trimming reports and remapped BAM (default: OUTPUT.ont-preprocess).")
+    add_ont_arguments(parser_plot)
     parser_plot.add_argument(
         "--fileform",
         dest="fileform",
@@ -78,7 +85,8 @@ def build_parser():
     parser_plot.add_argument("-i", "--invert", action="store_true", default=False)
     parser_plot.add_argument("-L", "--log", action="store_true", default=False)
     parser_plot.add_argument("-M", "--main-bam", dest="main_bam", metavar="mainbam", action=FullPaths)
-    parser_plot.add_argument("--max-reads", type=int, default=80)
+    parser_plot.add_argument("--max-reads", type=int,
+                             help="Displayed reads (default: 30 for one-column linear, otherwise 80).")
     parser_plot.add_argument(
         "--max-internal-gap",
         dest="max_internal_gap",
@@ -127,9 +135,10 @@ def build_parser():
     parser_plot.add_argument(
         "--query",
         dest="query",
-        default=["ALNLEN >= 10000", "MAPLEN < reflength"],
+        default=None,
         nargs="+",
-        help="Pandas query clauses used to filter long-read BAM rows.",
+        help="Pandas query clauses for displayed linear read rows (e.g. 'ALNLEN >= 10000' "
+        "'MAPLEN <= reflength'). Depth and evidence always use all input reads.",
     )
     parser_plot.add_argument("-R", "--rnaseq-bam", dest="rnaseq_bam", metavar="rnabam", action=FullPaths)
     parser_plot.add_argument(
@@ -143,6 +152,7 @@ def build_parser():
         dest="sort",
         choices=["ALNLEN", "TRULEN", "MAPLEN", "POS"],
         default="ALNLEN",
+        help="Circular read order; linear length ranking (POS uses ALNLEN). Linear rows always follow reference position.",
     )
     parser_plot.add_argument("--ticks", type=int, nargs="+", default=[0, 10, 100, 1000])
     parser_plot.add_argument("--title")
@@ -187,6 +197,7 @@ def build_parser():
     parser_prepare.add_argument("--mito-fasta", required=True, type=Path)
     parser_prepare.add_argument("--nuclear-fasta", type=Path)
     parser_prepare.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_prepare)
     parser_prepare.add_argument(
         "--exclude-token",
         action="append",
@@ -197,11 +208,12 @@ def build_parser():
 
     parser_long = advanced_subparsers.add_parser(
         "map-long",
-        help="map long reads to a doubled mitochondrial reference and select redwood reads",
+        help="map long reads using the requested topology and select circular plot reads",
     )
     parser_long.add_argument("--mito-fasta", required=True, type=Path)
     parser_long.add_argument("--long-reads", required=True, type=Path, nargs="+")
     parser_long.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_long)
     parser_long.add_argument("--output-bam", type=Path)
     parser_long.add_argument(
         "--preset",
@@ -220,7 +232,19 @@ def build_parser():
     parser_long.add_argument("--target-depth", type=float, default=100.0)
     parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_long.add_argument("--dry-run", action="store_true")
+    add_ont_arguments(parser_long, mapping=True)
     parser_long.set_defaults(func=map_long)
+
+    from .ont import reprocess_existing
+
+    parser_ont = advanced_subparsers.add_parser(
+        "reprocess-ont", help="trim and remap ONT molecules already mapped to the target genome")
+    parser_ont.add_argument("--mito-fasta", required=True, type=Path)
+    parser_ont.add_argument("--main-bam", required=True, type=Path)
+    parser_ont.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_ont)
+    add_ont_arguments(parser_ont)
+    parser_ont.set_defaults(func=reprocess_existing)
 
     parser_rna = advanced_subparsers.add_parser(
         "map-rnaseq",
@@ -244,6 +268,7 @@ def build_parser():
     parser_metrics.add_argument("--long-bam", type=Path)
     parser_metrics.add_argument("--rnaseq-bam", type=Path)
     parser_metrics.add_argument("--output", required=True, type=Path)
+    add_topology_argument(parser_metrics)
     parser_metrics.set_defaults(func=write_metrics)
 
     parser_run = subparsers.add_parser(
@@ -260,10 +285,14 @@ def build_parser():
     parser_run.add_argument("--long-reads", type=Path, nargs="+")
     parser_run.add_argument("--rnaseq-reads", type=Path, nargs="+")
     parser_run.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_run)
+    add_linear_arguments(parser_run)
+    add_ont_arguments(parser_run, mapping=True)
     parser_run.add_argument("--long-read-preset", default="map-ont")
     parser_run.add_argument("--rnaseq-preset", default="sr")
     parser_run.add_argument("--long-read-depth", type=float, default=100.0)
-    parser_run.add_argument("--max-reads", type=int, default=80)
+    parser_run.add_argument("--max-reads", type=int,
+                            help="Displayed reads (default: 30 for one-column linear, otherwise 80).")
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")
@@ -283,13 +312,82 @@ def build_parser():
     return parser
 
 
+def add_ont_arguments(parser, mapping=False):
+    if mapping:
+        parser.add_argument("--no-ont-trim", action="store_true",
+                            help="Skip automatic adapter trimming/remapping with the map-ont preset.")
+    parser.add_argument("--ont-adapter-5p", action="append",
+                        help="5-prime adapter in original read orientation; repeat to replace the default ONT ligation motifs.")
+    parser.add_argument("--ont-adapter-3p", action="append",
+                        help="3-prime adapter in original read orientation; repeat to replace the default ONT ligation motifs.")
+    parser.add_argument("--ont-overlap", type=int, default=12,
+                        help="Minimum adapter overlap (default: 12 bp).")
+    parser.add_argument("--ont-error-rate", type=float, default=0.1,
+                        help="Cutadapt maximum substitution/indel error rate (default: 0.1).")
+    parser.add_argument("--ont-end-window", type=int, default=100,
+                        help="Search only this many bases at each read end (default: 100; capped at half the read length).")
+    parser.add_argument("--ont-threads", type=int, default=4,
+                        help="Threads for ONT trimming and remapping (default: 4).")
+    parser.add_argument("--ont-source-reads", type=Path, nargs="+",
+                        help="Original ONT FASTQ(s), required if complete read sequence/qualities cannot be recovered from BAM.")
+
+
+def add_topology_argument(parser):
+    parser.add_argument("--topology", choices=["circular", "linear"], default="circular",
+                        help="Genome topology. Linear mode never doubles or wraps the reference.")
+
+
+def add_linear_arguments(parser):
+    parser.add_argument("--linear-layout", choices=["one-column", "two-column", "legacy"], default="two-column",
+                        help="Redwood linear layout at publication size (default: two-column); legacy keeps the 13-inch layout.")
+    parser.add_argument("--publication-journal", choices=["nature", "nature-communications"], default="nature",
+                        help="Column widths and minimum line weights for publication layouts (default: nature).")
+    parser.add_argument("--panel-label", help="Optional publication panel letter.")
+    parser.add_argument("--terminal-details", action="store_true",
+                        help="Also export a companion figure with expanded terminal coordinates.")
+    parser.add_argument("--variant-sites", type=Path,
+                        help="Also export an allele panel for a TSV of 1-based sites (position or pos column).")
+    parser.add_argument("--variant-min-base-quality", type=int, default=20,
+                        help="Minimum base quality for the optional allele panel (default: 20).")
+    parser.add_argument("--linear-read-selection", choices=["terminal-balanced", "longest"],
+                        default="terminal-balanced",
+                        help="Linear read sample: longest reads balanced across left/right/both termini (default), "
+                             "or longest overall. Selection precedes coordinate sorting.")
+    parser.add_argument("--linear-style", choices=["redwood", "diagnostic"], default="redwood",
+                        help="Linear figure style: Redwood's existing tracks unrolled (default), or diagnostic panels.")
+    parser.add_argument("--linear-track", choices=["depth", "ends", "clips", "none"], action="append",
+                        help="Production evidence bands (default: depth). Repeat for depth/ends/clips, or use none.")
+    parser.add_argument("--read-color", choices=["wood", "class"], default="wood",
+                        help="Production linear reads: original wood gradient (default) or supplied class colors.")
+    parser.add_argument("--show-terminal-sequences", action="store_true",
+                        help="Include the first/last 30 bases beneath the production linear figure.")
+    parser.add_argument("--rnaseq-label", default="RNA depth",
+                        help="RNA track label in production linear figures (default: RNA depth).")
+    parser.add_argument("--read-classes", type=Path,
+                        help="Linear plots: TSV with read and class columns, optional locus/nuclear_locus.")
+    parser.add_argument("--terminal-window", type=int, default=30,
+                        help="Linear read selection and evidence: terminal window in bp (default: 30).")
+    parser.add_argument("--junction-window", type=int, default=300,
+                        help="Linear evidence: distance from a terminus for split joins (default: 300).")
+    parser.add_argument("--clip-threshold", type=int, default=100,
+                        help="Linear evidence: minimum long soft-clip length in bp (default: 100).")
+    parser.add_argument("--bin-size", type=int, default=25,
+                        help="Linear plots: start/end and soft-clip histogram bin size in bp (default: 25).")
+    parser.add_argument("--depth-scale", choices=["linear", "log"], default="linear",
+                        help="Linear plots: depth axis scale (log uses log(1 + depth), retaining zeros).")
+    parser.add_argument("--hide-evidence", action="store_true",
+                        help="Linear plots: omit start/end and clip panels; still export evidence tables.")
+    parser.add_argument("--width", type=float,
+                        help="Override linear width in inches; otherwise use the selected publication layout.")
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     if not hasattr(args, "func"):
         parser.print_help()
         return 2
-    if args.command != "plot" or getattr(args, "verbose", False):
+    if args.command != "plot" or getattr(args, "verbose", False) or getattr(args, "topology", "circular") == "linear":
         args.func(args)
     else:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
