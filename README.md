@@ -32,7 +32,7 @@ redwood plot --topology circular \
   --fileform pdf svg png --no-timestamp -T -o human_redwood
 ```
 
-### Linear genomes
+### Linear mitochondrial genomes
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/redwood-linear-dark.png">
