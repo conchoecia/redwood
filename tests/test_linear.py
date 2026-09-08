@@ -202,8 +202,7 @@ def test_production_composition_windows_do_not_join_termini():
 
 
 def test_production_packing_preserves_split_segments_and_read_indels(fixture):
-    from redwood.linear_redwood import pack_linear_reads, read_polygons
-    from redwood.renderer import REDWOOD_GRADIENT
+    from redwood.linear_redwood import pack_linear_reads, read_outline
 
     directory, _, reference = fixture
     bam = write_bam(directory, [("split", 0, "100M100S", 0),
@@ -216,10 +215,43 @@ def test_production_packing_preserves_split_segments_and_read_indels(fixture):
     assert {name: row for name, _, row in placed} == {"split": 0, "middle": 0, "overlap": 1}
     assert len(next(group for name, group, _ in placed if name == "split")) == 2
     segment = next(s for s in segments if s.name == "overlap")
-    polygons, colors = read_polygons(segment, 1, .02, 10, REDWOOD_GRADIENT)
-    assert min(x for polygon in polygons for x, _ in polygon) == 980.5
-    assert max(x for polygon in polygons for x, _ in polygon) == 990.5
-    assert tuple(colors[0]) != tuple(colors[-1])
+    outline = read_outline(segment, 1, .02, 10)
+    assert outline[:, 0].min() == 980.5
+    assert outline[:, 0].max() == 990.5
+
+
+def test_production_gradient_preserves_indels_without_slicing_reads(fixture):
+    import io
+    import xml.etree.ElementTree as ET
+    import matplotlib.pyplot as plt
+    from matplotlib.path import Path
+    from redwood.linear_redwood import add_gradient_read, read_outline
+    from redwood.renderer import REDWOOD_GRADIENT
+
+    directory, _, reference = fixture
+    bam = write_bam(directory, [("indels", 100, "30M20I30M20D20M", 0)])
+    segments, _ = read_segments(bam, reference)
+    segment = segments[0]
+    path = Path(read_outline(segment, 1, .02, 10))
+    # The existing insertion expansion and deletion narrowing survive clipping.
+    assert path.contains_point((130, 1.012))
+    assert not path.contains_point((110, 1.012))
+    assert path.contains_point((170, 1))
+    assert not path.contains_point((170, 1.006))
+    assert path.contains_point((190, 1.006))
+    fig, ax = plt.subplots()
+    ax.set(xlim=(100, 201), ylim=(.97, 1.03))
+    mesh = add_gradient_read(ax, segment, 1, .02, 10, REDWOOD_GRADIENT)
+    mesh.set_gid("gradient_read")
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    plt.close(fig)
+    root = ET.fromstring(buffer.getvalue())
+    ns = {"svg": "http://www.w3.org/2000/svg"}
+    group = root.find(".//svg:g[@id='gradient_read']", ns)
+    assert len(group.findall(".//svg:linearGradient", ns)) == 1
+    assert not group.findall(".//svg:image", ns)
+    assert len(group.findall(".//svg:path", ns)) == 1
 
 
 def test_production_optional_bands_and_class_colors(fixture):

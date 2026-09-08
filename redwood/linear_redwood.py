@@ -9,18 +9,20 @@ from __future__ import annotations
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import PolyCollection
-from matplotlib.colors import to_rgba
+from matplotlib.collections import PolyCollection, TriMesh
+from matplotlib.colors import to_hex, to_rgba
 from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Polygon, Rectangle
 from matplotlib.textpath import TextPath
+from matplotlib.tri import Triangulation
+from matplotlib.transforms import Affine2D
 import numpy as np
 
 from .linear import binned, class_colors
 from .linear_evidence import merged_intervals
 from .renderer import (
     AT_COLORMAP, AT_RANGE, BARK_COLOR, BARK_COLOR_ALT, CIGAR_OP_WIDTH, FEATURE_COLORS, READ_ARC_WIDTH,
-    REDWOOD_GRADIENT, _cigar_width_profile, _gradient_color, choose_position_label_step,
+    REDWOOD_GRADIENT, _cigar_width_profile, choose_position_label_step,
 )
 
 
@@ -88,24 +90,95 @@ def add_arrow(ax, start, stop, center, height, strand, length, color, alpha=.95)
     ax.add_patch(Polygon(points, facecolor=color, edgecolor="none", alpha=alpha))
 
 
-def read_polygons(segment, center, height, min_indel, gradient):
-    """Use the circular renderer's indel widths and wood gradient on rectangles."""
+def read_outline(segment, center, height, min_indel):
+    """One read silhouette, with vertices only at CIGAR width transitions."""
     profile = _cigar_width_profile(segment.cigar, min_indel, 1.0)
     widths = np.where(profile > 1, height * CIGAR_OP_WIDTH[1] / READ_ARC_WIDTH,
                       np.where(profile < 1, height * CIGAR_OP_WIDTH[2] / READ_ARC_WIDTH, height))
-    # Preserve exact CIGAR transitions, even for an indel narrower than one
-    # gradient sample. Bulk polygon rendering avoids thousands of patch artists.
-    step = max(1, len(widths) // 360)
-    breaks = np.unique(np.r_[0, np.arange(0, len(widths), step),
-                             np.flatnonzero(np.diff(widths)) + 1, len(widths)])
-    polygons, colors = [], []
+    breaks = np.r_[0, np.flatnonzero(np.diff(widths)) + 1, len(widths)]
+    upper, lower = [], []
     for start, stop in zip(breaks, breaks[1:]):
         half = widths[start] / 2
         x0, x1 = segment.start + start + .5, segment.start + stop + .5
-        polygons.append([(x0, center - half), (x1, center - half),
-                         (x1, center + half), (x0, center + half)])
-        colors.append(_gradient_color(gradient, (start + stop) / (2 * len(widths))))
-    return polygons, colors
+        upper.extend([(x0, center - half), (x1, center - half)])
+        lower.extend([(x0, center + half), (x1, center + half)])
+    return np.array(upper + lower[::-1])
+
+
+class GradientRead(TriMesh):
+    """Use one native SVG gradient; other backends use vector Gouraud shading."""
+
+    def draw(self, renderer):
+        from matplotlib.backends.backend_svg import RendererSVG
+
+        # savefig can wrap the vector backend in a MixedModeRenderer.
+        svg = getattr(renderer, "_vector_renderer", renderer)
+        if not isinstance(svg, RendererSVG):
+            return super().draw(renderer)
+        if not self.get_visible():
+            return
+        transform = self.get_transform() + Affine2D().scale(1, -1).translate(0, svg.height)
+        points = transform.transform(self.outline)
+        endpoints = transform.transform([(self.outline[:, 0].min(), 0),
+                                         (self.outline[:, 0].max(), 0)])
+        gradient_id = f"{self.get_gid()}_gradient"
+        clip_id = f"{self.get_gid()}_bounds"
+        writer = svg.writer
+        svg.open_group("GradientRead", gid=self.get_gid())
+        writer.start("defs")
+        writer.start("linearGradient", id=gradient_id, gradientUnits="userSpaceOnUse",
+                     x1=str(endpoints[0, 0]), y1=str(endpoints[0, 1]),
+                     x2=str(endpoints[1, 0]), y2=str(endpoints[1, 1]))
+        for offset, color in zip(np.linspace(0, 1, len(self.gradient)), self.gradient):
+            writer.element("stop", offset=str(offset),
+                           attrib={"stop-color": to_hex(color), "stop-opacity": str(to_rgba(color)[3])})
+        writer.end("linearGradient")
+        bounds = self.get_clip_box()
+        if bounds is not None:
+            writer.start("clipPath", id=clip_id)
+            writer.element("rect", x=str(bounds.x0), y=str(svg.height - bounds.y1),
+                           width=str(bounds.width), height=str(bounds.height))
+            writer.end("clipPath")
+        writer.end("defs")
+        attrs = {"fill": f"url(#{gradient_id})", "stroke": "none"}
+        if bounds is not None:
+            attrs["clip-path"] = f"url(#{clip_id})"
+        path = "M " + " L ".join(f"{x:.6f} {y:.6f}" for x, y in points) + " Z"
+        writer.element("path", d=path, attrib=attrs)
+        svg.close_group("GradientRead")
+        self.stale = False
+
+
+def add_gradient_read(ax, segment, center, height, min_indel, gradient):
+    """Continuous vector shading clipped to the exact CIGAR silhouette.
+
+    Two triangles per pair of color stops replace hundreds of solid slices.
+    PDF and SVG retain vector shading; PNG uses the same interpolated colors.
+    The wood gradient follows increasing reference coordinates, as before;
+    it does not encode alignment strand or the physical ends of the read.
+    """
+    outline = read_outline(segment, center, height, min_indel)
+    clip = Polygon(outline, closed=True, transform=ax.transData)
+    if len(gradient) == 1:
+        clip.set_facecolor(gradient[0])
+        clip.set_edgecolor("none")
+        ax.add_patch(clip)
+        return clip
+    x0, y0 = outline.min(axis=0)
+    x1, y1 = outline.max(axis=0)
+    x = np.repeat(np.linspace(x0, x1, len(gradient)), 2)
+    y = np.tile([y0, y1], len(gradient))
+    triangles = []
+    for i in range(0, len(x) - 2, 2):
+        triangles.extend([(i, i + 1, i + 2), (i + 1, i + 3, i + 2)])
+    mesh = GradientRead(Triangulation(x, y, triangles),
+                        facecolors=np.repeat([to_rgba(color) for color in gradient], 2, axis=0),
+                        edgecolors="none", linewidths=0)
+    mesh.outline, mesh.gradient = outline, gradient
+    mesh.set_gid(f"redwood_read_{len(ax.collections)}")
+    ax.add_collection(mesh)
+    mesh.set_clip_path(clip)
+    return mesh
 
 
 def add_composition(ax, values, top, height, length):
@@ -229,8 +302,8 @@ def draw_redwood_linear(args, reference, features, selected, evidence, rna):
             ax.vlines(pos, .25, .28, color=muted, linewidth=.4, alpha=.4)
     def label(text, top, band_height):
         ax.text(-length * .012, top + band_height / 2, text, ha="right", va="center", color=muted, fontsize=6.5)
-    def note(text, top):
-        ax.text(length, top + .065, text, ha="right", va="center", color=muted, fontsize=5.8)
+    def note(text, top, offset=.065):
+        ax.text(length, top + offset, text, ha="right", va="center", color=muted, fontsize=5.8)
     top = .36
     class_palette = class_colors(evidence["depth"] if evidence else [])
     for name, band_height in bands:
@@ -245,7 +318,7 @@ def draw_redwood_linear(args, reference, features, selected, evidence, rna):
                 scale = args.depth_scale
             maximum = add_depth_band(ax, forward, reverse, top, band_height, length, bark, strand, scale)
             label(getattr(args, "rnaseq_label", "RNA depth") if name == "rna" else "Read depth", top, band_height)
-            note(f"0–{maximum:,.0f}×" + (" · log(1 + depth)" if scale == "log" else ""), top)
+            note(f"Log depth · max {maximum:,.0f}×" if scale == "log" else f"0–{maximum:,.0f}×", top)
         elif name == "termini":
             itr_caps = all((f["type"] == "repeat_region" and f["attributes"].get("rpt_type") == "inverted") or
                            (f["type"] == "misc_feature" and "cap" in f["name"].lower()) for f in terminal)
@@ -284,23 +357,19 @@ def draw_redwood_linear(args, reference, features, selected, evidence, rna):
         elif name == "reads":
             label("Reads", top, band_height)
             spacing = (band_height - .08) / max(1, row_count)
-            polygons, facecolors = [], []
             for _, group, row in placed:
                 for segment in group:
                     gradient = ([class_palette[segment.read_class]] if getattr(args, "read_color", "wood") == "class"
                                 else REDWOOD_GRADIENT)
-                    shapes, colors = read_polygons(segment, top + .04 + (row + .5) * spacing,
-                                                   spacing * .64, getattr(args, "min_indel", 10), gradient)
-                    polygons.extend(shapes)
-                    facecolors.extend(colors)
-            ax.add_collection(PolyCollection(polygons, facecolors=facecolors, edgecolors="none", antialiaseds=False))
+                    add_gradient_read(ax, segment, top + .04 + (row + .5) * spacing,
+                                      spacing * .64, getattr(args, "min_indel", 10), gradient)
         elif name in {"ends", "clips"}:
             maximum = add_endpoint_band(ax, evidence, top, band_height, length, args.bin_size, bark, name == "clips")
             label("Starts / ends" if name == "ends" else "Soft clips", top, band_height)
-            note(f"{args.bin_size} bp bins · 0–{maximum:,} · log(1 + count)", top)
+            note(f"{args.bin_size} bp bins · log count · max {maximum:,}", top, offset=.10)
             detail = (f"Above: left · below: right · light: 1–{args.clip_threshold - 1} bp · dark: ≥{args.clip_threshold} bp"
                       if name == "clips" else "Above: starts · below: ends")
-            ax.text(1, top + .065, detail, ha="left", va="center", color=muted, fontsize=5.8)
+            ax.text(1, top + .10, detail, ha="left", va="center", color=muted, fontsize=5.8)
         top += band_height
     title = getattr(args, "title", None) or reference.name
     fig.text(.5, 1 - .24 / height, title, ha="center", va="center", color=fg, fontsize=15, fontweight="bold")

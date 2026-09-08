@@ -41,7 +41,9 @@ An optional `--rnaseq-bam` adds primary RNA alignment depth; add
   percentile color range. The 201 bp sequence windows shorten at linear termini
   instead of wrapping. `--extra-track gc` adds a GC strip.
 * Tightly packed read rows with the original heartwood-to-sapwood gradient and
-  the same insertion/deletion width ratios as regular circular reads.
+  the same insertion/deletion width ratios as regular circular reads. Each SVG
+  read is one outline with a native continuous gradient; PDF uses vector shading
+  clipped to that outline, instead of hundreds of solid color slices.
 * The existing light/dark backgrounds, subtle frame, coordinate ticks, and
   centered reference-length label.
 
@@ -66,6 +68,10 @@ redwood plot --topology linear --mito-fasta mitochondrion.fa \
 several bands, or use `--linear-track none` for only the original core tracks and
 terminal annotations. Start/end and clip counts use mirrored `log(1 + count)`
 histograms, with scales and clip categories printed on the figure.
+The short labels "Log depth" and "log count" refer to these `log(1 + value)`
+transforms, which retain zeros. Printed maxima are raw depth/count values,
+not transformed values; the endpoint maximum applies to either side of the
+baseline and is a count per bin.
 `--show-terminal-sequences` adds the first/last 30 bases below the plot.
 
 ### Diagnostic style
@@ -123,6 +129,9 @@ deletions use `--min-indel` (default 10 bp). Production reads encode these as
 width changes, matching the circular plot. Diagnostic reads use insertion ticks,
 deletion gaps, and soft-clip endpoint dots. Neither invents reference sequence
 outside the molecule; the production clip band summarizes unaligned tails.
+The reference runs left to right, from base 1 to the final base. The wood
+gradient runs dark to light in that direction on both alignment strands; it is
+not a read 5-prime/3-prime indicator. Display order and strand are independent.
 
 Explicit `--query` clauses retain the legacy column definitions:
 
@@ -159,6 +168,10 @@ TSV positions are 1-based; junction endpoints are inclusive. Endpoint tracks
 count **alignments**, including supplementary segments. The uniform endpoint
 expectation is therefore `alignment_count * window / reference_length`.
 They show reference-coordinate left/right endpoints, independent of read strand.
+These are alignment boundaries, not necessarily physical molecule ends. A
+shorter read can end internally without clipping; a clipped or supplementary
+alignment can end before the original read ends. Endpoint tracks include all
+input alignments even when the read panel displays only the longest reads.
 Plot bars aggregate `--bin-size` bases (default 25), using mirrored `log(1 + count)`
 heights in production or symmetric logarithmic axes in diagnostic panels.
 Exact terminal counts use `--terminal-window` (default 30 bp).
