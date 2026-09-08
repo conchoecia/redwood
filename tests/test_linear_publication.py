@@ -8,7 +8,7 @@ from redwood.cli import build_parser
 from redwood.linear import save_linear_figure
 from redwood.linear_evidence import Reference, Segment
 from redwood.linear_publication import draw_publication_linear, resolve_linear_layout
-from redwood.linear_redwood import add_gradient_read, read_outline
+from redwood.linear_redwood import add_clip_stack, add_gradient_read, read_outline
 
 
 @pytest.mark.parametrize("journal,widths", [("nature", (89, 183)), ("nature-communications", (88, 180))])
@@ -101,4 +101,44 @@ def test_journal_minimum_does_not_erase_deletions():
     assert not silhouette.contains_point((50.5, center + .55))
     assert silhouette.contains_point((50.5, center + .499))
     assert silhouette.contains_point((50.5, center - .499))
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_soft_clip_stack_has_disjoint_categories_and_cumulative_log_scale(sign):
+    from matplotlib.colors import to_rgba
+    from redwood.renderer import BARK_COLOR, REDWOOD_GRADIENT
+
+    fig, ax = plt.subplots()
+    short, long = np.array([3, 5, 0, 0]), np.array([6, 0, 8, 0])
+    light, dark = add_clip_stack(ax, np.arange(4), np.ones(4), short, long, 15, sign, 6, 9)
+    for i, (first, second) in enumerate(zip(light, dark)):
+        assert first.get_y() == 15
+        assert second.get_y() == pytest.approx(first.get_y() + first.get_height())
+        assert first.get_height() == pytest.approx(sign * np.log1p(short[i]) / np.log(10) * 6)
+        assert first.get_height() + second.get_height() == pytest.approx(sign * np.log1p(short[i] + long[i]) / np.log(10) * 6)
+        a = sorted((first.get_y(), first.get_y() + first.get_height()))
+        b = sorted((second.get_y(), second.get_y() + second.get_height()))
+        assert max(a[0], b[0]) >= min(a[1], b[1]) - 1e-10
+        assert first.get_facecolor() == to_rgba(REDWOOD_GRADIENT[-1])
+        assert second.get_facecolor() == to_rgba(BARK_COLOR)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("layout", ["one-column", "two-column"])
+def test_clip_length_legend_fits_without_overlapping_heading(layout):
+    reference = Reference("mito", "ACGT" * 250)
+    args = build_parser().parse_args(["plot", "--linear-layout", layout, "--linear-track", "clips"])
+    resolve_linear_layout(args)
+    profiles = {f"{kind}_{side}_clips": np.ones(reference.length, dtype=int)
+                for kind in ("short", "long") for side in ("left", "right")}
+    fig = draw_publication_linear(args, reference, [], [], {"profiles": profiles, "depth": {}, "summary": {}}, None)
+    fig.canvas.draw()
+    texts = [t for t in fig.axes[0].texts if t.get_text() in
+             {"<100 bp", "≥100 bp", "Above: left / below: right", "max 50"}]
+    assert len(texts) == 4
+    boxes = [text.get_window_extent() for text in texts]
+    for i, box in enumerate(boxes):
+        assert fig.bbox.contains(box.x0, box.y0) and fig.bbox.contains(box.x1, box.y1)
+        assert not any(box.overlaps(other) for other in boxes[i + 1:])
     plt.close(fig)

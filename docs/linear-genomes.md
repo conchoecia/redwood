@@ -140,6 +140,12 @@ terminal annotations. Start/end and clip counts use mirrored `log(1 + count)`
 histograms. Publication panels keep labels short and put the exact bin size,
 transform, and clipping categories in the caption; legacy panels print those
 details above the bands.
+Soft clips are stacked by length: light brown short clips adjoin the baseline,
+and dark brown long clips extend outward, using the same colors above and below.
+Production layouts include a visible length key, with an extra legend row when
+the column is too narrow for one line. Counts are stacked before applying
+`log(1 + count)` to cumulative boundaries; total height represents total count,
+while segment heights on this nonlinear scale do not represent category fractions.
 The short labels "Log depth" and "log count" refer to these `log(1 + value)`
 transforms, which retain zeros. Printed maxima are raw depth/count values,
 not transformed values; the endpoint maximum applies to either side of the

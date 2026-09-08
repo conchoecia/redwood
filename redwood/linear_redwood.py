@@ -198,6 +198,23 @@ def add_depth_band(ax, forward, reverse, top, height, length, colors, strand=Fal
     return maximum
 
 
+def add_clip_stack(ax, x, widths, short, long, center, sign, amplitude, maximum, long_color=BARK_COLOR):
+    """Stack raw counts, then transform the cumulative boundaries with log1p.
+
+    Each category occupies its own rectangle. Long clips begin exactly where
+    short clips end; neither category is painted over the other. The same
+    colors encode length categories above and below the baseline.
+    """
+    scale = amplitude / np.log1p(max(maximum, 1))
+    short_height = sign * np.log1p(short) * scale
+    total_height = sign * np.log1p(short + long) * scale
+    short_bars = ax.bar(x, short_height, bottom=center, width=widths, align="edge",
+                        color=REDWOOD_GRADIENT[-1], linewidth=0)
+    long_bars = ax.bar(x, total_height - short_height, bottom=center + short_height,
+                       width=widths, align="edge", color=long_color, linewidth=0)
+    return short_bars, long_bars
+
+
 def add_endpoint_band(ax, evidence, top, height, length, bin_size, colors, clips=False):
     profiles = evidence["profiles"]
     if clips:
@@ -211,13 +228,12 @@ def add_endpoint_band(ax, evidence, top, height, length, bin_size, colors, clips
     denominator = np.log1p(maximum)
     center, amplitude = top + height * .55, height * .32
     for side, values, sign, color in (("left", first, -1, colors[0]), ("right", second, 1, colors[1])):
-        heights = sign * np.log1p(values) / denominator * amplitude
-        ax.bar(x, heights, bottom=center, width=widths, align="edge", color=color, linewidth=0)
         if clips:
             _, short, _ = binned(profiles[f"short_{side}_clips"], bin_size)
-            fraction = np.divide(short, values, out=np.zeros_like(short, dtype=float), where=values > 0)
-            ax.bar(x, heights * fraction, bottom=center, width=widths, align="edge",
-                   color=REDWOOD_GRADIENT[-1], linewidth=0)
+            add_clip_stack(ax, x, widths, short, values - short, center, sign, amplitude, maximum, colors[0])
+        else:
+            heights = sign * np.log1p(values) / denominator * amplitude
+            ax.bar(x, heights, bottom=center, width=widths, align="edge", color=color, linewidth=0)
     ax.hlines(center, .5, length + .5, color=colors[0], linewidth=.35, alpha=.35)
     return maximum
 

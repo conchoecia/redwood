@@ -16,7 +16,7 @@ import numpy as np
 
 from .linear import binned, class_colors
 from .linear_evidence import pack_linear_reads
-from .linear_redwood import add_arrow, add_gradient_read, annotation_rows, linear_base_fraction
+from .linear_redwood import add_arrow, add_clip_stack, add_gradient_read, annotation_rows, linear_base_fraction
 from .renderer import AT_COLORMAP, AT_RANGE, BARK_COLOR, BARK_COLOR_ALT, FEATURE_COLORS, REDWOOD_GRADIENT
 
 
@@ -109,6 +109,19 @@ def draw_publication_linear(args, reference, features, selected, evidence, rna):
         tracks = []
     if getattr(args, "hide_evidence", False):
         tracks = [track for track in tracks if track not in {"ends", "clips"}]
+    clip_keys = ((f"<{args.clip_threshold} bp", REDWOOD_GRADIENT[-1]),
+                 (f"≥{args.clip_threshold} bp", BARK_COLOR))
+    clip_key_width = sum(9 + text_width(title, family, 6) for title, color in clip_keys) + 10
+    clip_heading_width = text_width("Above: left / below: right", family, 6)
+    clip_extra = 0
+    if evidence and "clips" in tracks:
+        totals = [binned(evidence["profiles"][f"short_{side}_clips"] +
+                         evidence["profiles"][f"long_{side}_clips"], args.bin_size)[1]
+                  for side in ("left", "right")]
+        clip_maximum = max(*(int(values.max()) for values in totals), 1)
+        clip_max_width = text_width(f"max {clip_maximum:,}", family, 6)
+        if clip_heading_width + clip_key_width + clip_max_width + 16 > plot_width:
+            clip_extra = 9
     class_mode = getattr(args, "read_color", "wood") == "class"
     if class_mode and not args.read_classes:
         raise ValueError("--read-color class requires --read-classes")
@@ -141,7 +154,7 @@ def draw_publication_linear(args, reference, features, selected, evidence, rna):
         bands.append(("reads", max(16, row_count * pitch + 4)))
     for track in ("ends", "clips"):
         if evidence and track in tracks:
-            bands.append((track, 23))
+            bands.append((track, 23 + (clip_extra if track == "clips" else 0)))
     class_rows = int(np.ceil(len(palette) / (1 if args.linear_layout == "one-column" else 3))) if class_mode else 0
     footer = class_rows * 11 + (22 if getattr(args, "show_terminal_sequences", False) else 0)
     top_margin = 19
@@ -287,18 +300,31 @@ def draw_publication_linear(args, reference, features, selected, evidence, rna):
             x, above, widths = binned(first, args.bin_size)
             _, below, _ = binned(second, args.bin_size)
             maximum = max(int(above.max()), int(below.max()), 1)
-            center, amplitude = top + 15, 6
+            center, amplitude = top + 15 + (clip_extra if clips else 0), 6
             label("Soft clips" if clips else "Read ends", center)
             text(1, top + 5, "Above: left / below: right" if clips else "Above: starts / below: ends", 6, ha="left")
             text(length, top + 5, f"max {maximum:,}", 6, ha="right")
+            if clips:
+                key_y = top + 5 + clip_extra
+                key_x = (0 if clip_extra else
+                         (clip_heading_width + 8 + plot_width - clip_max_width - 8 - clip_key_width) / 2)
+                for index, (title, color) in enumerate(clip_keys):
+                    ax.add_patch(Rectangle((key_x / plot_width * length + .5, key_y - 2.5),
+                                           6 / plot_width * length, 5, facecolor=color, edgecolor="none"))
+                    artist = text((key_x + 9) / plot_width * length + .5, key_y, title, 6, ha="left")
+                    artist.set_gid(f"clip_legend_{index}")
+                    key_x += 9 + text_width(title, family, 6) + 10
+                metadata["clip_histogram"] = {"stacking": "cumulative counts transformed with log1p",
+                                               "threshold_bp": args.clip_threshold,
+                                               "colors": [color for title, color in clip_keys],
+                                               "legend_extra_row": bool(clip_extra)}
             for side, counts, sign, color in (("left", above, -1, colors[0]), ("right", below, 1, colors[1])):
-                h = sign * np.log1p(counts) / np.log1p(maximum) * amplitude
-                ax.bar(x, h, bottom=center, width=widths, align="edge", color=color, linewidth=0)
                 if clips:
                     _, short, _ = binned(profiles[f"short_{side}_clips"], args.bin_size)
-                    fraction = np.divide(short, counts, out=np.zeros_like(short, dtype=float), where=counts > 0)
-                    ax.bar(x, h * fraction, bottom=center, width=widths, align="edge",
-                           color=REDWOOD_GRADIENT[-1], linewidth=0)
+                    add_clip_stack(ax, x, widths, short, counts - short, center, sign, amplitude, maximum)
+                else:
+                    h = sign * np.log1p(counts) / np.log1p(maximum) * amplitude
+                    ax.bar(x, h, bottom=center, width=widths, align="edge", color=color, linewidth=0)
             ax.hlines(center, .5, length + .5, color=colors[0], linewidth=thin, alpha=.45)
         top += height
     if class_mode:
@@ -343,6 +369,9 @@ def publication_caption(args, reference, evidence, info):
                       "Endpoint and clipping profiles count alignment endpoints; starts are above and ends below the baseline. "
                       "Soft clips use reference-left above and reference-right below, independent of alignment strand. "
                       f"Light clipping segments are 1-{args.clip_threshold - 1} bp; dark segments are at least {args.clip_threshold} bp. "
+                      "Short-clip counts are stacked next to the baseline, with long-clip counts beyond them. "
+                      "The same length colors apply on both sides. The log(1 + count) transform is applied to cumulative "
+                      "stack boundaries, so colored segment heights are not proportional to category counts. "
                       f"Endpoint/clipping bins are {args.bin_size} bp, with height proportional to log(1 + count). "
                       "The displayed maximum is the largest binned count in either direction."])
     if args.read_color == "wood":
