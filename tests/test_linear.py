@@ -404,12 +404,26 @@ def test_linear_run_passes_topology_to_plot_and_metrics(fixture, monkeypatch):
         assert args.topology == "linear"
         return {"output_bam": str(bam)}
     monkeypatch.setattr("redwood.workflow.map_long", mapped)
+    sites = directory / "sites.tsv"
+    sites.write_text("position\n5\n")
     args = build_parser().parse_args(["run", "--topology", "linear", "--mito-fasta", str(fasta),
                                      "--long-reads", "unused.fastq", "--outdir", str(directory / "run"),
-                                     "--dpi", "60", "--max-reads", "0", "--linear-read-selection", "longest"])
+                                     "--dpi", "60", "--max-reads", "0", "--linear-read-selection", "longest",
+                                     "--linear-layout", "one-column", "--publication-journal", "nature-communications",
+                                     "--terminal-details", "--variant-sites", str(sites)])
     result = run_end_to_end(args)
     assert result["metrics"]["topology"] == "linear"
     summary = json.loads((directory / "run/redwood.evidence.json").read_text())
     assert summary["reads"] == 1 and summary["display"]["reads"] == 0
     assert summary["read_selection"]["method"] == "longest"
+    publication = summary["production_style"]["publication"]
+    assert publication["width_mm"] == pytest.approx(88)
+    assert publication["layout"] == "one-column"
+    assert (directory / "run/redwood.termini.png").exists()
+    assert (directory / "run/redwood.termini.json").exists()
+    assert (directory / "run/redwood.variants.png").exists()
+    variants = json.loads((directory / "run/redwood.variants.json").read_text())
+    assert variants["population_reads"] == 1 and variants["displayed_count"] == 0
+    assert (directory / "run/redwood.variants.counts.tsv").exists()
+    assert (directory / "run/redwood.caption.md").exists()
     assert (directory / "run/redwood.png").exists()

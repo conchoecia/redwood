@@ -848,7 +848,7 @@ def run_plot(args) -> None:
         rnaseq_bam=Path(args.rnaseq_bam) if args.rnaseq_bam else None,
         title=title,
         subtitle=subtitle,
-        max_reads=getattr(args, "max_reads", 80),
+        max_reads=80 if getattr(args, "max_reads", None) is None else args.max_reads,
         dark=getattr(args, "dark", False),
         rnaseq_style=rnaseq_style,
         transparent=args.transparent,

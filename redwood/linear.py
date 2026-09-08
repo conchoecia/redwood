@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sys
+import copy
+import csv
+import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -198,6 +201,9 @@ def run_linear_plot(args):
         raise ValueError("--topology linear cannot be combined with --doubled; use an undoubled BAM")
     if not getattr(args, "mito_fasta", None):
         raise ValueError("--topology linear requires --mito-fasta for reference identity and terminal sequences")
+    from .linear_publication import resolve_linear_layout
+
+    publication = resolve_linear_layout(args)
     if args.max_reads < 0 or args.width <= 0 or args.bin_size < 1 or getattr(args, "min_indel", 10) < 1:
         raise ValueError("width/bin-size/min-indel must be positive; max-reads must be nonnegative")
     if min(args.terminal_window, args.junction_window, args.clip_threshold) < 1:
@@ -207,6 +213,11 @@ def run_linear_plot(args):
     classes = load_classes(args.read_classes)
     if args.read_classes and not args.main_bam:
         raise ValueError("--read-classes requires --main-bam")
+    if getattr(args, "variant_sites", None) and not args.main_bam:
+        raise ValueError("--variant-sites requires --main-bam")
+    if getattr(args, "linear_style", "redwood") != "redwood" and (
+            getattr(args, "variant_sites", None) or getattr(args, "terminal_details", False)):
+        raise ValueError("--terminal-details and --variant-sites require --linear-style redwood")
     evidence, segments, selected = None, [], []
     if args.main_bam:
         segments, counts = read_segments(args.main_bam, reference, classes if args.read_classes else None)
@@ -231,9 +242,29 @@ def run_linear_plot(args):
     rna = rna_depth(args.rnaseq_bam, reference) if args.rnaseq_bam else None
     if getattr(args, "linear_style", "redwood") == "redwood":
         from .linear_redwood import draw_redwood_linear
+        from .linear_publication import draw_publication_linear, publication_caption, publication_font
 
-        fig = draw_redwood_linear(args, reference, features, selected, evidence, rna)
-        return save_linear_figure(fig, args, evidence, selected)
+        with plt.rc_context({"font.family": publication_font()} if publication else {}):
+            fig = (draw_publication_linear if publication else draw_redwood_linear)(
+                args, reference, features, selected, evidence, rna)
+            if publication:
+                fig._redwood_caption = publication_caption(args, reference, evidence, fig._redwood_publication_info)
+            base = save_linear_figure(fig, args, evidence, selected)
+            if getattr(args, "terminal_details", False):
+                from .linear_terminals import draw_terminal_details
+
+                details = draw_terminal_details(args, reference, features, selected, evidence)
+                detail_args = copy.copy(args)
+                detail_args.BASENAME, detail_args.no_timestamp = f"{base}.termini", True
+                save_linear_figure(details, detail_args, None, selected)
+            if getattr(args, "variant_sites", None):
+                from .linear_variants import draw_variant_details
+
+                details = draw_variant_details(args, reference, selected)
+                detail_args = copy.copy(args)
+                detail_args.BASENAME, detail_args.no_timestamp = f"{base}.variants", True
+                save_linear_figure(details, detail_args, None, selected)
+        return
     panels = [("annotation", 2.0)]
     if selected:
         panels.append(("reads", 2.2))
@@ -354,7 +385,8 @@ def save_linear_figure(fig, args, evidence, selected):
                 raster_reads = fmt.lower() == "pdf" and bool(gradient_reads)
                 for artist in gradient_reads:
                     artist.set_rasterized(raster_reads)
-                dpi = max(600, args.dpi) if raster_reads else args.dpi
+                minimum_dpi = 1200 if getattr(args, "linear_layout", "legacy") != "legacy" else 600
+                dpi = max(minimum_dpi, args.dpi) if raster_reads else args.dpi
                 if raster_reads:
                     pdf_read_dpi = dpi
                 fig.savefig(f"{base}.{fmt}", format=fmt, dpi=dpi, transparent=args.transparent)
@@ -373,3 +405,28 @@ def save_linear_figure(fig, args, evidence, selected):
         for warning in evidence["summary"]["warnings"]:
             print(f"redwood: {warning}", file=sys.stderr)
     print(f"Wrote linear plot: {base}")
+    for attribute, suffix in (("_redwood_publication_info", ".layout"),
+                              ("_redwood_terminal_metadata", ""),
+                              ("_redwood_variant_metadata", "")):
+        if hasattr(fig, attribute):
+            Path(f"{base}{suffix}.json").write_text(json.dumps(getattr(fig, attribute), indent=2) + "\n")
+    if hasattr(fig, "_redwood_caption"):
+        Path(f"{base}.caption.md").write_text(fig._redwood_caption)
+    if hasattr(fig, "_redwood_variant_metadata"):
+        metadata = fig._redwood_variant_metadata
+        with open(f"{base}.counts.tsv", "w", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t")
+            writer.writerow(["position", "reference", "label", "status", "reads", "callable_reads", "allele_fraction"])
+            for site in metadata["sites"]:
+                for status, count in site["counts"].items():
+                    fraction = site["allele_fractions"].get(status)
+                    writer.writerow([site["position"], site["reference"], site["label"], status,
+                                     count, site["called_reads"], "" if fraction is None else fraction])
+        indices = {row["read"]: row["index"] for row in metadata["displayed_reads"]}
+        with open(f"{base}.reads.tsv", "w", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t")
+            writer.writerow(["read", "display_row", "position", "call"])
+            for row in metadata["selected_reads"]:
+                for site, call in zip(metadata["sites"], row["calls"]):
+                    writer.writerow([row["read"], indices.get(row["read"], ""), site["position"], call])
+    return base

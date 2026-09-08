@@ -80,7 +80,8 @@ def build_parser():
     parser_plot.add_argument("-i", "--invert", action="store_true", default=False)
     parser_plot.add_argument("-L", "--log", action="store_true", default=False)
     parser_plot.add_argument("-M", "--main-bam", dest="main_bam", metavar="mainbam", action=FullPaths)
-    parser_plot.add_argument("--max-reads", type=int, default=80)
+    parser_plot.add_argument("--max-reads", type=int,
+                             help="Displayed reads (default: 30 for one-column linear, otherwise 80).")
     parser_plot.add_argument(
         "--max-internal-gap",
         dest="max_internal_gap",
@@ -272,7 +273,8 @@ def build_parser():
     parser_run.add_argument("--long-read-preset", default="map-ont")
     parser_run.add_argument("--rnaseq-preset", default="sr")
     parser_run.add_argument("--long-read-depth", type=float, default=100.0)
-    parser_run.add_argument("--max-reads", type=int, default=80)
+    parser_run.add_argument("--max-reads", type=int,
+                            help="Displayed reads (default: 30 for one-column linear, otherwise 80).")
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")
@@ -298,6 +300,17 @@ def add_topology_argument(parser):
 
 
 def add_linear_arguments(parser):
+    parser.add_argument("--linear-layout", choices=["one-column", "two-column", "legacy"], default="two-column",
+                        help="Redwood linear layout at publication size (default: two-column); legacy keeps the 13-inch layout.")
+    parser.add_argument("--publication-journal", choices=["nature", "nature-communications"], default="nature",
+                        help="Column widths and minimum line weights for publication layouts (default: nature).")
+    parser.add_argument("--panel-label", help="Optional publication panel letter.")
+    parser.add_argument("--terminal-details", action="store_true",
+                        help="Also export a companion figure with expanded terminal coordinates.")
+    parser.add_argument("--variant-sites", type=Path,
+                        help="Also export an allele panel for a TSV of 1-based sites (position or pos column).")
+    parser.add_argument("--variant-min-base-quality", type=int, default=20,
+                        help="Minimum base quality for the optional allele panel (default: 20).")
     parser.add_argument("--linear-read-selection", choices=["terminal-balanced", "longest"],
                         default="terminal-balanced",
                         help="Linear read sample: longest reads balanced across left/right/both termini (default), "
@@ -326,8 +339,8 @@ def add_linear_arguments(parser):
                         help="Linear plots: depth axis scale (log uses log(1 + depth), retaining zeros).")
     parser.add_argument("--hide-evidence", action="store_true",
                         help="Linear plots: omit start/end and clip panels; still export evidence tables.")
-    parser.add_argument("--width", type=float, default=13,
-                        help="Linear figure width in inches (default: 13).")
+    parser.add_argument("--width", type=float,
+                        help="Override linear width in inches; otherwise use the selected publication layout.")
 
 
 def main(argv=None):

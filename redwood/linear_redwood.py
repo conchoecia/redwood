@@ -69,11 +69,12 @@ def add_arrow(ax, start, stop, center, height, strand, length, color, alpha=.95)
     ax.add_patch(Polygon(points, facecolor=color, edgecolor="none", alpha=alpha))
 
 
-def read_outline(segment, center, height, min_indel):
+def read_outline(segment, center, height, min_indel, min_width=0):
     """One read silhouette, with vertices only at CIGAR width transitions."""
     profile = _cigar_width_profile(segment.cigar, min_indel, 1.0)
     widths = np.where(profile > 1, height * CIGAR_OP_WIDTH[1] / READ_ARC_WIDTH,
                       np.where(profile < 1, height * CIGAR_OP_WIDTH[2] / READ_ARC_WIDTH, height))
+    widths = np.maximum(widths, min_width)
     breaks = np.r_[0, np.flatnonzero(np.diff(widths)) + 1, len(widths)]
     upper, lower = [], []
     for start, stop in zip(breaks, breaks[1:]):
@@ -129,7 +130,7 @@ class GradientRead(TriMesh):
         self.stale = False
 
 
-def add_gradient_read(ax, segment, center, height, min_indel, gradient):
+def add_gradient_read(ax, segment, center, height, min_indel, gradient, min_width=0):
     """Continuous vector shading clipped to the exact CIGAR silhouette.
 
     Two triangles per pair of color stops replace hundreds of solid slices.
@@ -138,7 +139,7 @@ def add_gradient_read(ax, segment, center, height, min_indel, gradient):
     The wood gradient follows increasing reference coordinates, as before;
     it does not encode alignment strand or the physical ends of the read.
     """
-    outline = read_outline(segment, center, height, min_indel)
+    outline = read_outline(segment, center, height, min_indel, min_width)
     clip = Polygon(outline, closed=True, transform=ax.transData)
     if len(gradient) == 1:
         clip.set_facecolor(gradient[0])
@@ -156,7 +157,11 @@ def add_gradient_read(ax, segment, center, height, min_indel, gradient):
                         facecolors=np.repeat([to_rgba(color) for color in gradient], 2, axis=0),
                         edgecolors="none", linewidths=0)
     mesh.outline, mesh.gradient = outline, gradient
-    mesh.set_gid(f"redwood_read_{len(ax.collections)}")
+    # A companion figure can contain several axes. SVG ids must be unique
+    # across the whole document, including each gradient's definition.
+    index = getattr(ax.figure, "_redwood_gradient_count", 0)
+    ax.figure._redwood_gradient_count = index + 1
+    mesh.set_gid(f"redwood_read_{index}")
     ax.add_collection(mesh)
     mesh.set_clip_path(clip)
     return mesh
