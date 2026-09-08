@@ -278,12 +278,16 @@ def map_reads(
     output_bam: Path,
     preset: str,
     dry_run: bool = False,
+    preserve_segments: bool = False,
 ) -> None:
     if not dry_run:
         require_tool("minimap2")
         require_tool("samtools")
     output_bam.parent.mkdir(parents=True, exist_ok=True)
-    cmd = ["minimap2", "-a", "-x", preset, str(reference)] + [str(path) for path in reads]
+    cmd = ["minimap2", "-a", "-x", preset]
+    if preserve_segments:
+        cmd += ["-Y", "--secondary=no"]
+    cmd += [str(reference)] + [str(path) for path in reads]
     run_pipeline([cmd, ["samtools", "sort", "-o", str(output_bam), "-"]], dry_run=dry_run)
     if not dry_run:
         run_command(["samtools", "index", str(output_bam)])
@@ -346,6 +350,26 @@ def bam_depth_metrics(bam_path: Path, sequence_length: int) -> dict[str, float |
 
 
 def write_metrics(args: argparse.Namespace) -> dict[str, object]:
+    if getattr(args, "topology", "circular") == "linear":
+        from .linear_evidence import collect_evidence, load_reference, read_segments
+
+        reference = load_reference(args.mito_fasta)
+        metrics = {"sequence_length": reference.length, "topology": "linear", "tracks": {}}
+        if args.long_bam:
+            segments, counts = read_segments(args.long_bam, reference)
+            metrics["tracks"]["long_reads"] = collect_evidence(segments, reference, counts)["summary"]
+        if args.rnaseq_bam:
+            from .linear import rna_depth
+
+            forward, reverse = rna_depth(args.rnaseq_bam, reference)
+            depth = forward + reverse
+            metrics["tracks"]["rnaseq"] = {"mean_depth": float(depth.mean()),
+                                            "breadth": float((depth > 0).mean())}
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(metrics, indent=2) + "\n")
+        print(json.dumps(metrics, indent=2))
+        return metrics
     _, sequence = first_fasta_record(Path(args.mito_fasta))
     metrics: dict[str, object] = {"sequence_length": len(sequence), "tracks": {}}
     if args.long_bam:
@@ -361,7 +385,13 @@ def write_metrics(args: argparse.Namespace) -> dict[str, object]:
 
 def prepare_reference(args: argparse.Namespace) -> None:
     outdir = Path(args.outdir)
-    write_doubled_mito_reference(Path(args.mito_fasta), outdir / "mitochondrion.doubled.fa")
+    if getattr(args, "topology", "circular") == "linear":
+        from .linear_evidence import load_reference
+
+        reference = load_reference(args.mito_fasta)
+        write_fasta(outdir / "mitochondrion.linear.fa", reference.name, reference.sequence)
+    else:
+        write_doubled_mito_reference(Path(args.mito_fasta), outdir / "mitochondrion.doubled.fa")
     if args.nuclear_fasta:
         build_rna_bait_reference(
             Path(args.mito_fasta),
@@ -374,6 +404,21 @@ def prepare_reference(args: argparse.Namespace) -> None:
 def map_long(args: argparse.Namespace) -> dict[str, object]:
     outdir = Path(args.outdir)
     long_reads = [Path(path) for path in args.long_reads]
+    if getattr(args, "topology", "circular") == "linear":
+        from .linear_evidence import load_reference
+
+        if str(getattr(args, "copies", "auto")).lower() not in {"auto", "1"}:
+            raise ValueError("linear mapping requires one reference copy; omit --copies or use --copies 1")
+        reference = load_reference(args.mito_fasta)
+        ref = outdir / "references" / "mitochondrion.linear.fa"
+        write_fasta(ref, reference.name, reference.sequence)
+        output_bam = Path(args.output_bam) if args.output_bam else outdir / "long_reads.linear.bam"
+        map_reads(ref, long_reads, output_bam, args.preset, dry_run=args.dry_run, preserve_segments=True)
+        # Circular span/depth selection would bias termini and discard split
+        # segments. Linear mode retains all alignments for evidence; only the
+        # figure's read panel is limited by --max-reads.
+        return {"raw_bam": str(output_bam), "output_bam": str(output_bam), "copies": 1,
+                "topology": "linear", "selection": "all primary and supplementary alignments"}
     _, mito_sequence = first_fasta_record(Path(args.mito_fasta))
     sequence_length = len(mito_sequence)
 
@@ -432,14 +477,20 @@ def map_rnaseq(args: argparse.Namespace) -> dict[str, object]:
 
 
 def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
+    topology = getattr(args, "topology", "circular")
+    if topology == "linear":
+        from .linear_evidence import load_annotations, load_reference
+
+        load_annotations(args.gff, load_reference(args.mito_fasta))
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    results: dict[str, object] = {"outdir": str(outdir)}
+    results: dict[str, object] = {"outdir": str(outdir), "topology": topology}
     long_bam = None
     rnaseq_bam = None
 
     if args.long_reads:
         long_args = argparse.Namespace(
+            topology=topology,
             mito_fasta=args.mito_fasta,
             long_reads=args.long_reads,
             outdir=outdir,
@@ -470,6 +521,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
 
     if not args.dry_run:
         metrics_args = argparse.Namespace(
+            topology=topology,
             mito_fasta=args.mito_fasta,
             long_bam=str(long_bam) if long_bam else None,
             rnaseq_bam=str(rnaseq_bam) if rnaseq_bam else None,
@@ -478,10 +530,19 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
         results["metrics"] = write_metrics(metrics_args)
 
         if not args.skip_plot:
-            if long_bam is None and args.gff is None:
+            if topology == "circular" and long_bam is None and args.gff is None:
                 raise SystemExit("plotting without long reads requires --gff so the mitochondrial length is known")
-            doubled = ["main"] if long_bam else []
+            doubled = ["main"] if long_bam and topology == "circular" else []
             plot_args = argparse.Namespace(
+                topology=topology,
+                read_classes=getattr(args, "read_classes", None),
+                terminal_window=getattr(args, "terminal_window", 30),
+                junction_window=getattr(args, "junction_window", 300),
+                clip_threshold=getattr(args, "clip_threshold", 100),
+                bin_size=getattr(args, "bin_size", 25),
+                depth_scale=getattr(args, "depth_scale", "linear"),
+                hide_evidence=getattr(args, "hide_evidence", False),
+                width=getattr(args, "width", 13),
                 mito_fasta=str(args.mito_fasta),
                 main_bam=str(long_bam) if long_bam else None,
                 rnaseq_bam=str(rnaseq_bam) if rnaseq_bam else None,

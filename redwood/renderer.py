@@ -827,6 +827,12 @@ def plot_file(
 
 
 def run_plot(args) -> None:
+    if getattr(args, "topology", "circular") == "linear":
+        from .linear import run_linear_plot
+
+        return run_linear_plot(args)
+    if getattr(args, "read_classes", None):
+        raise ValueError("--read-classes currently requires --topology linear")
     output_base = args.BASENAME or "redwood"
     rnaseq_style = "strand" if "rnaseq-strand" in getattr(args, "extra_tracks", []) else "coverage"
     reference_fasta = getattr(args, "mito_fasta", None) or getattr(args, "reference_fasta", None)

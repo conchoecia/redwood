@@ -1,8 +1,8 @@
 # redwood
 
-`redwood` is a standalone circular genome plotting tool extracted from the
-`pauvre redwood` plotter. It draws circular plots with optional long-read BAM
-rings, GFF annotation tracks, and RNA-seq depth tracks.
+`redwood` is a standalone genome plotting tool extracted from the
+`pauvre redwood` plotter. It draws circular or linear plots with optional long-read
+BAM tracks, GFF annotation tracks, and RNA-seq depth tracks.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/redwood-grid-dark.png">
@@ -46,6 +46,19 @@ redwood plot \
 ```
 
 Input BAM files must be indexed with `samtools index`.
+
+For a **linear** mitogenome, use an undoubled BAM and `--topology linear`:
+
+```bash
+redwood plot --topology linear --mito-fasta mitochondrion.fa \
+  --main-bam reads.bam --gff annotation.gff3 --read-classes reads.tsv \
+  --fileform pdf svg png --no-timestamp -T -o linear_mitogenome
+```
+
+The horizontal view includes strand-aware annotations, read-class depth,
+alignment endpoints, and soft clips, with JSON/TSV evidence exports.
+See [linear genome figures](docs/linear-genomes.md) for annotation-only figures,
+query filters, evidence definitions, and `redwood run --topology linear`.
 
 The README example figure is built with the same plotting backend used by
 `redwood plot` and `redwood run`.

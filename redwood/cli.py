@@ -25,13 +25,13 @@ class FullPaths(argparse.Action):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="redwood",
-        description="Plot circular genome read, annotation, and depth tracks.",
+        description="Plot circular or linear genome read, annotation, and depth tracks.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     parser_plot = subparsers.add_parser(
         "plot",
-        help="make a redwood circular genome plot",
+        help="make a redwood genome plot",
     )
     parser_plot.add_argument(
         "-d",
@@ -43,6 +43,8 @@ def build_parser():
         help="Input BAMs mapped to a doubled circular reference. Accepts main, rnaseq, or both.",
     )
     parser_plot.add_argument("--dpi", metavar="dpi", default=600, type=int)
+    add_topology_argument(parser_plot)
+    add_linear_arguments(parser_plot)
     parser_plot.add_argument(
         "--fileform",
         dest="fileform",
@@ -127,9 +129,10 @@ def build_parser():
     parser_plot.add_argument(
         "--query",
         dest="query",
-        default=["ALNLEN >= 10000", "MAPLEN < reflength"],
+        default=None,
         nargs="+",
-        help="Pandas query clauses used to filter long-read BAM rows.",
+        help="Pandas query clauses for displayed linear read rows (e.g. 'ALNLEN >= 10000' "
+        "'MAPLEN <= reflength'). Depth and evidence always use all input reads.",
     )
     parser_plot.add_argument("-R", "--rnaseq-bam", dest="rnaseq_bam", metavar="rnabam", action=FullPaths)
     parser_plot.add_argument(
@@ -187,6 +190,7 @@ def build_parser():
     parser_prepare.add_argument("--mito-fasta", required=True, type=Path)
     parser_prepare.add_argument("--nuclear-fasta", type=Path)
     parser_prepare.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_prepare)
     parser_prepare.add_argument(
         "--exclude-token",
         action="append",
@@ -197,11 +201,12 @@ def build_parser():
 
     parser_long = advanced_subparsers.add_parser(
         "map-long",
-        help="map long reads to a doubled mitochondrial reference and select redwood reads",
+        help="map long reads using the requested topology and select circular plot reads",
     )
     parser_long.add_argument("--mito-fasta", required=True, type=Path)
     parser_long.add_argument("--long-reads", required=True, type=Path, nargs="+")
     parser_long.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_long)
     parser_long.add_argument("--output-bam", type=Path)
     parser_long.add_argument(
         "--preset",
@@ -244,6 +249,7 @@ def build_parser():
     parser_metrics.add_argument("--long-bam", type=Path)
     parser_metrics.add_argument("--rnaseq-bam", type=Path)
     parser_metrics.add_argument("--output", required=True, type=Path)
+    add_topology_argument(parser_metrics)
     parser_metrics.set_defaults(func=write_metrics)
 
     parser_run = subparsers.add_parser(
@@ -260,6 +266,8 @@ def build_parser():
     parser_run.add_argument("--long-reads", type=Path, nargs="+")
     parser_run.add_argument("--rnaseq-reads", type=Path, nargs="+")
     parser_run.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_run)
+    add_linear_arguments(parser_run)
     parser_run.add_argument("--long-read-preset", default="map-ont")
     parser_run.add_argument("--rnaseq-preset", default="sr")
     parser_run.add_argument("--long-read-depth", type=float, default=100.0)
@@ -283,13 +291,37 @@ def build_parser():
     return parser
 
 
+def add_topology_argument(parser):
+    parser.add_argument("--topology", choices=["circular", "linear"], default="circular",
+                        help="Genome topology. Linear mode never doubles or wraps the reference.")
+
+
+def add_linear_arguments(parser):
+    parser.add_argument("--read-classes", type=Path,
+                        help="Linear plots: TSV with read and class columns, optional locus/nuclear_locus.")
+    parser.add_argument("--terminal-window", type=int, default=30,
+                        help="Linear evidence: terminal window in bp (default: 30).")
+    parser.add_argument("--junction-window", type=int, default=300,
+                        help="Linear evidence: distance from a terminus for split joins (default: 300).")
+    parser.add_argument("--clip-threshold", type=int, default=100,
+                        help="Linear evidence: minimum long soft-clip length in bp (default: 100).")
+    parser.add_argument("--bin-size", type=int, default=25,
+                        help="Linear plots: start/end and soft-clip histogram bin size in bp (default: 25).")
+    parser.add_argument("--depth-scale", choices=["linear", "log"], default="linear",
+                        help="Linear plots: depth axis scale (log uses log(1 + depth), retaining zeros).")
+    parser.add_argument("--hide-evidence", action="store_true",
+                        help="Linear plots: omit start/end and clip panels; still export evidence tables.")
+    parser.add_argument("--width", type=float, default=13,
+                        help="Linear figure width in inches (default: 13).")
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     if not hasattr(args, "func"):
         parser.print_help()
         return 2
-    if args.command != "plot" or getattr(args, "verbose", False):
+    if args.command != "plot" or getattr(args, "verbose", False) or getattr(args, "topology", "circular") == "linear":
         args.func(args)
     else:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
