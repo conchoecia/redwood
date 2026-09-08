@@ -97,6 +97,14 @@ directory. It expects `minimap2` and `samtools` on `PATH`.
 For existing BAM files, use `redwood plot` directly. To summarize existing BAMs
 without plotting, use `redwood metrics`.
 
+ONT mapping (`map-ont`) automatically extracts target-mapped molecules, trims
+end adapters with Cutadapt, and remaps them before selection and plotting.
+Install `pip install 'redwood[ont]'` (or `pip install -e '.[ont]'` in a checkout).
+Use `--no-ont-trim` to skip this step. For an existing ONT BAM, add
+`--reprocess-ont` to `redwood plot`, or use `redwood advanced reprocess-ont`.
+Original reads, removed tails, trimming reports and remapped BAMs are retained.
+See [ONT preprocessing](docs/ont-preprocessing.md) for parameters and provenance.
+
 Lower-level workflow steps are available under `redwood advanced` for debugging
 or custom pipelines:
 
@@ -104,6 +112,7 @@ or custom pipelines:
 redwood advanced prepare-reference --help
 redwood advanced map-long --help
 redwood advanced map-rnaseq --help
+redwood advanced reprocess-ont --help
 ```
 
 The plotting CLI also accepts `--extra-track` declarations for newer plot

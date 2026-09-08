@@ -45,6 +45,11 @@ def build_parser():
     parser_plot.add_argument("--dpi", metavar="dpi", default=600, type=int)
     add_topology_argument(parser_plot)
     add_linear_arguments(parser_plot)
+    parser_plot.add_argument("--reprocess-ont", action="store_true",
+                             help="Treat the main BAM as ONT: extract mapped molecules, trim adapters, and remap before plotting.")
+    parser_plot.add_argument("--ont-workdir", type=Path,
+                             help="New directory for ONT reads, trimming reports and remapped BAM (default: OUTPUT.ont-preprocess).")
+    add_ont_arguments(parser_plot)
     parser_plot.add_argument(
         "--fileform",
         dest="fileform",
@@ -227,7 +232,19 @@ def build_parser():
     parser_long.add_argument("--target-depth", type=float, default=100.0)
     parser_long.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_long.add_argument("--dry-run", action="store_true")
+    add_ont_arguments(parser_long, mapping=True)
     parser_long.set_defaults(func=map_long)
+
+    from .ont import reprocess_existing
+
+    parser_ont = advanced_subparsers.add_parser(
+        "reprocess-ont", help="trim and remap ONT molecules already mapped to the target genome")
+    parser_ont.add_argument("--mito-fasta", required=True, type=Path)
+    parser_ont.add_argument("--main-bam", required=True, type=Path)
+    parser_ont.add_argument("--outdir", required=True, type=Path)
+    add_topology_argument(parser_ont)
+    add_ont_arguments(parser_ont)
+    parser_ont.set_defaults(func=reprocess_existing)
 
     parser_rna = advanced_subparsers.add_parser(
         "map-rnaseq",
@@ -270,6 +287,7 @@ def build_parser():
     parser_run.add_argument("--outdir", required=True, type=Path)
     add_topology_argument(parser_run)
     add_linear_arguments(parser_run)
+    add_ont_arguments(parser_run, mapping=True)
     parser_run.add_argument("--long-read-preset", default="map-ont")
     parser_run.add_argument("--rnaseq-preset", default="sr")
     parser_run.add_argument("--long-read-depth", type=float, default=100.0)
@@ -292,6 +310,26 @@ def build_parser():
     )
     parser_run.set_defaults(func=run_end_to_end)
     return parser
+
+
+def add_ont_arguments(parser, mapping=False):
+    if mapping:
+        parser.add_argument("--no-ont-trim", action="store_true",
+                            help="Skip automatic adapter trimming/remapping with the map-ont preset.")
+    parser.add_argument("--ont-adapter-5p", action="append",
+                        help="5-prime adapter in original read orientation; repeat to replace the default ONT ligation motifs.")
+    parser.add_argument("--ont-adapter-3p", action="append",
+                        help="3-prime adapter in original read orientation; repeat to replace the default ONT ligation motifs.")
+    parser.add_argument("--ont-overlap", type=int, default=12,
+                        help="Minimum adapter overlap (default: 12 bp).")
+    parser.add_argument("--ont-error-rate", type=float, default=0.1,
+                        help="Cutadapt maximum substitution/indel error rate (default: 0.1).")
+    parser.add_argument("--ont-end-window", type=int, default=100,
+                        help="Search only this many bases at each read end (default: 100; capped at half the read length).")
+    parser.add_argument("--ont-threads", type=int, default=4,
+                        help="Threads for ONT trimming and remapping (default: 4).")
+    parser.add_argument("--ont-source-reads", type=Path, nargs="+",
+                        help="Original ONT FASTQ(s), required if complete read sequence/qualities cannot be recovered from BAM.")
 
 
 def add_topology_argument(parser):

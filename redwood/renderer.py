@@ -827,6 +827,10 @@ def plot_file(
 
 
 def run_plot(args) -> None:
+    if getattr(args, "reprocess_ont", False):
+        from .ont import preprocess_plot
+
+        args = preprocess_plot(args)
     if getattr(args, "topology", "circular") == "linear":
         from .linear import run_linear_plot
 

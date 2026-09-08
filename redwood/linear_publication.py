@@ -348,6 +348,16 @@ def publication_caption(args, reference, evidence, info):
     if args.read_color == "wood":
         lines += ["", "The brown read gradient is Redwood styling along increasing reference coordinates; it does not encode strand, quality or alleles. "
                   "Read-width changes mark CIGAR insertions and deletions, with a minimum printable width."]
+    if getattr(args, "ont_preprocessing", None):
+        prep = args.ont_preprocessing
+        parameters = prep["parameters"]
+        lines += ["", f"ONT adapter preprocessing: Cutadapt {prep['tools']['cutadapt']} trimmed "
+                  f"{prep['trimmed_read_count']:,} of {prep['reads']:,} target-mapped candidate reads, "
+                  f"searching the outer {parameters['end_window']} bp at each end with at least "
+                  f"{parameters['minimum_overlap']} bp adapter overlap and maximum error rate "
+                  f"{parameters['error_rate']}. All candidates were remapped with minimap2 "
+                  f"{prep['tools']['minimap2']} (map-ont); {prep['unmapped_after']:,} no longer mapped. "
+                  "Original reads and removed sequences are retained in the preprocessing output."]
     for key, values in info.get("composition", {}).items():
         lo, hi = values["limits_percent"]
         lines += ["", f"{key.upper()} composition uses centered 201 bp windows shortened at the termini. "

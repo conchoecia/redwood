@@ -29,12 +29,12 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,ont]"
 
       - name: Install PDF renderer for visual regression
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y poppler-utils
+          sudo apt-get install -y poppler-utils minimap2 samtools
 
       - name: Run tests
         run: pytest -q

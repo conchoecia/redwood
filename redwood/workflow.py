@@ -401,9 +401,25 @@ def prepare_reference(args: argparse.Namespace) -> None:
         )
 
 
+def _reprocess_mapped_ont(args, raw_bam, reference):
+    from .ont import ont_options, reprocess_ont_bam
+
+    directory = Path(args.outdir) / "ont_preprocessing"
+    if args.dry_run:
+        print(f"ONT: extract mapped molecules from {raw_bam}, trim end adapters with Cutadapt, "
+              f"remap to {reference}; reports in {directory}", file=sys.stderr)
+        return {"output_bam": str(directory / "reads.trimmed.remapped.bam"), "dry_run": True}
+    options = ont_options(args)
+    options["source_reads"] = options["source_reads"] or args.long_reads
+    return reprocess_ont_bam(raw_bam, reference, directory, **options)
+
+
 def map_long(args: argparse.Namespace) -> dict[str, object]:
     outdir = Path(args.outdir)
     long_reads = [Path(path) for path in args.long_reads]
+    trim_ont = args.preset == "map-ont" and not getattr(args, "no_ont_trim", False)
+    if trim_ont and not args.dry_run and (outdir / "ont_preprocessing").exists():
+        raise ValueError("ONT preprocessing output already exists; choose a new --outdir")
     if getattr(args, "topology", "circular") == "linear":
         from .linear_evidence import load_reference
 
@@ -413,12 +429,21 @@ def map_long(args: argparse.Namespace) -> dict[str, object]:
         ref = outdir / "references" / "mitochondrion.linear.fa"
         write_fasta(ref, reference.name, reference.sequence)
         output_bam = Path(args.output_bam) if args.output_bam else outdir / "long_reads.linear.bam"
-        map_reads(ref, long_reads, output_bam, args.preset, dry_run=args.dry_run, preserve_segments=True)
+        raw_bam = outdir / "long_reads.untrimmed.bam" if trim_ont else output_bam
+        map_reads(ref, long_reads, raw_bam, args.preset, dry_run=args.dry_run, preserve_segments=True)
+        preprocessing = None
+        if trim_ont:
+            preprocessing = _reprocess_mapped_ont(args, raw_bam, ref)
+            if not args.dry_run:
+                output_bam.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(preprocessing["output_bam"], output_bam)
+                pysam.index(str(output_bam))
         # Circular span/depth selection would bias termini and discard split
         # segments. Linear mode retains all alignments for evidence; only the
         # figure's read panel is limited by --max-reads.
-        return {"raw_bam": str(output_bam), "output_bam": str(output_bam), "copies": 1,
-                "topology": "linear", "selection": "all primary and supplementary alignments"}
+        return {"raw_bam": str(raw_bam), "output_bam": str(output_bam), "copies": 1,
+                "topology": "linear", "selection": "all primary and supplementary alignments",
+                "ont_preprocessing": preprocessing}
     _, mito_sequence = first_fasta_record(Path(args.mito_fasta))
     sequence_length = len(mito_sequence)
 
@@ -434,11 +459,13 @@ def map_long(args: argparse.Namespace) -> dict[str, object]:
     write_multi_mito_reference(Path(args.mito_fasta), ref, copies)
     raw_bam = outdir / "long_reads.raw.bam"
     output_bam = Path(args.output_bam) if args.output_bam else outdir / "long_reads.redwood.bam"
-    map_reads(ref, long_reads, raw_bam, args.preset, dry_run=args.dry_run)
+    map_reads(ref, long_reads, raw_bam, args.preset, dry_run=args.dry_run, preserve_segments=trim_ont)
+    preprocessing = _reprocess_mapped_ont(args, raw_bam, ref) if trim_ont else None
     if args.dry_run:
-        return {"raw_bam": str(raw_bam), "output_bam": str(output_bam), "copies": copies}
+        return {"raw_bam": str(raw_bam), "output_bam": str(output_bam), "copies": copies,
+                "ont_preprocessing": preprocessing}
     selection = select_long_circular_reads(
-        raw_bam,
+        Path(preprocessing["output_bam"]) if preprocessing else raw_bam,
         output_bam,
         sequence_length,
         args.target_depth,
@@ -449,6 +476,7 @@ def map_long(args: argparse.Namespace) -> dict[str, object]:
         "output_bam": str(output_bam),
         "copies": copies,
         "selection": selection,
+        "ont_preprocessing": preprocessing,
     }
 
 
@@ -500,6 +528,9 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
             min_span_fraction=args.min_span_fraction,
             dry_run=args.dry_run,
         )
+        for key, value in vars(args).items():
+            if key.startswith("ont_") or key == "no_ont_trim":
+                setattr(long_args, key, value)
         results["long_reads"] = map_long(long_args)
         long_bam = Path(results["long_reads"]["output_bam"])
 
@@ -578,6 +609,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 subtitle=None,
                 extra_tracks=[],
             )
+            plot_args.ont_preprocessing = results.get("long_reads", {}).get("ont_preprocessing")
             run_plot(plot_args)
             results["plot_base"] = str(outdir / args.plot_name)
 

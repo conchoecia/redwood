@@ -223,6 +223,8 @@ def run_linear_plot(args):
         segments, counts = read_segments(args.main_bam, reference, classes if args.read_classes else None)
         evidence = collect_evidence(segments, reference, counts, args.terminal_window,
                                     args.junction_window, args.clip_threshold)
+        if getattr(args, "ont_preprocessing", None):
+            evidence["summary"]["ont_preprocessing"] = args.ont_preprocessing
         selected = select_display_segments(segments, reference.length, getattr(args, "query", None),
                                            getattr(args, "sort", "ALNLEN"), args.max_reads,
                                            getattr(args, "linear_read_selection", "terminal-balanced"),

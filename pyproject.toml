@@ -30,6 +30,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ont = [
+    "cutadapt>=4.9,<6",
+]
 dev = [
     "pytest>=7",
 ]

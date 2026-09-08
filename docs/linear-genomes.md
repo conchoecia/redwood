@@ -8,6 +8,12 @@ the BAM reference length must equal the FASTA length. A doubled BAM or
 
 ## Figures from existing data
 
+For ONT inputs, add `--reprocess-ont` to trim supported end adapters and remap
+the target-mapped molecules before plotting. The `map-ont` workflow performs
+this automatically; `--no-ont-trim` skips it. See
+[ONT preprocessing](ont-preprocessing.md) for installation, adapter settings,
+original-read recovery and before/after reports.
+
 ```bash
 redwood plot --topology linear \
   --mito-fasta mitochondrion.fa \
