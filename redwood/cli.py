@@ -341,6 +341,8 @@ def build_parser():
     parser_numts.add_argument("--blastn", action="store_true", help="Also run blastn -task dc-megablast for short/diverged fragments (needs BLAST+).")
     parser_numts.add_argument("--merge", type=int, default=3000, help="Merge hits within this distance into one locus (default 3000).")
     parser_numts.add_argument("--pad", type=int, default=2000, help="A nuclear read segment within this distance of a locus counts as 'at the locus'.")
+    parser_numts.add_argument("--min-flank", dest="min_flank", type=int, default=500,
+                              help="A mito+nuclear read counts as a NUMT junction read only with this much nuclear sequence outside the locus.")
     parser_numts.add_argument("--flank", type=int, default=1000, help="Junction support: alignment must extend this far on both sides of a locus end.")
     parser_numts.add_argument("--threads", type=int, default=8)
     parser_numts.add_argument("--dpi", type=int, default=200)

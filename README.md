@@ -249,18 +249,19 @@ The mitogenome is aligned to the nuclear assembly (minimap2 `asm20`, optionally 
 fragments); hits within `--merge` bp are one locus. `numts.loci.tsv` lists every locus with its span, the mitogenome intervals it
 covers, the fraction of the molecule, identity (total and SNV-only) and class (`full-length` >= 95 % of the molecule, `large` >= 5 kb,
 `fragment`). Reads mapped to nuclear + mitochondrial sequence together are classified by where their segments land
-(`numts.read_classes.tsv`: `mito_only`, `mito_multisegment` = origin-crossing, `mito+nuclear_at_NUMT_locus` = junction read of a
-cataloged NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
+(`numts.read_classes.tsv`: `mito_only`, `mito_multisegment` = origin-crossing, `mito+nuclear_at_NUMT_locus` = read with >= 500 bp of nuclear
+flank at a cataloged NUMT, `mito+NUMT_homology` = nuclear segments only inside NUMT sequence (a competing placement of a
+mitochondrial read), `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
 junction are counted (`numts.junction_support.tsv`); `--mito-bam` writes a copy of the mito BAM with the class in a `PO:Z` tag.
 Figures: `numts.landscape.png` (chromosomes with every locus at its true genomic span, widened to a stated minimum when it
 would be invisible; box height = class, color = identity to the mtDNA), `numts.catalog.png`
-(each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath; the pieces of one
+(each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath; the alignments of one
 locus are joined by a dotted line), `numts.sizes.png` (one bar per locus of the mitochondrial sequence it carries, on an axis
 spanning the whole mitogenome, with the `large` and `full-length` thresholds drawn: this panel is what the classes mean, a
 class is the mtDNA content of the whole locus and not the size of any one piece) and, with `--figure`, one composite
 page of exactly 6.5 x 9 in (the text area of letter paper with 1-inch margins, so it prints as is and drops into a Word or
-Google document at full text width): circular map with its ring key (a) across the top, landscape (b), then catalog (c)
-beside the class panel (d). On the circular map, `redwood plot --numt-loci
+Google document at full text width): circular map with its ring key (a) beside the class panel (b), then landscape (c) and
+catalog (d) across the full width. On the circular map, `redwood plot --numt-loci
 numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
 numts.read_classes.tsv` colors reads by class (NUMT junction reads red, chimeras purple, nuclear gray).
 `AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.

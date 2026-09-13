@@ -457,17 +457,15 @@ def sequence_length_from_bam(path: Path) -> int:
 
 
 def at_profile(reference: str, window: int = 201) -> list[float]:
+    """AT fraction in a window centered on every position; windows wrap around the origin of the circular molecule."""
+    n = len(reference)
+    if n == 0:
+        return []
     half = window // 2
-    doubled = reference + reference
-    profile = []
-    offset = len(reference)
-    for i in range(len(reference)):
-        segment = doubled[offset + i - half : offset + i + half + 1]
-        if not segment:
-            profile.append(0.0)
-        else:
-            profile.append((segment.count("A") + segment.count("T")) / len(segment))
-    return profile
+    at = np.fromiter((c in "ATat" for c in reference), dtype=float, count=n)
+    padded = np.take(at, np.arange(-half, n + half), mode="wrap")
+    csum = np.concatenate([[0.0], np.cumsum(padded)])
+    return list((csum[window:window + n] - csum[:n]) / window)
 
 
 def strand_depth_profiles(bam_path: Path | None, length: int) -> tuple[np.ndarray, np.ndarray]:
@@ -588,7 +586,7 @@ _AA3 = {
 
 def clean_feature_name(name: str) -> str:
     """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...) and a trailing
-    parenthesised comment, so a descriptive Name never becomes a label that runs off the page."""
+    parenthesized comment, so a descriptive Name never becomes a label that runs off the page."""
     name = name.strip()
     name = _NAME_PAREN.sub("", name)          # "ND4L-2 gene (second copy of the duplication)" -> "ND4L-2 gene"
     name = _NAME_PARTIAL.sub("", name)
@@ -725,8 +723,9 @@ def add_feature_label(
     if not name or span <= 0:
         return
     angle = theta(int(start + (span / 2)), length)
+    upright = angle % 360                  # theta() runs from 90 down to -270; compare on 0-360
     rotation = angle - 90
-    if 90 < angle < 270:
+    if 180 < upright < 360:                # along-arc text on the bottom half would read upside down
         rotation += 180
     arc_units = (span / length) * 2 * np.pi * radius
     size = fontsize if not (prefer_outside and outer_radius is not None) else min_fontsize - 1
@@ -757,8 +756,9 @@ def add_feature_label(
     lead1 = polar_xy(base + 0.004, angle)
     ax.plot([lead0[0], lead1[0]], [lead0[1], lead1[1]], color=str(feature.get("color", color)), lw=0.6, alpha=0.9, zorder=5)
     x, y = polar_xy(base + 0.008, angle)
-    radial = angle if angle <= 90 or angle > 270 else angle + 180
-    ha = "left" if angle <= 90 or angle > 270 else "right"
+    left_half = 90 < upright < 270         # radial text on the left half would read upside down
+    radial = angle + 180 if left_half else angle
+    ha = "right" if left_half else "left"
     ax.text(x, y, name, ha=ha, va="center", color=outer_color or color, fontsize=size,
             rotation=radial, rotation_mode="anchor", fontweight="bold", zorder=5)
 
@@ -803,7 +803,7 @@ def add_position_labels(ax, length: int, color: str) -> None:
         if major:
             x, y = polar_xy(1.238, angle)
             rotation = angle - 90
-            if 90 < angle < 270:
+            if 180 < angle % 360 < 360:
                 rotation += 180
             ax.text(
                 x,
@@ -849,24 +849,33 @@ def infer_length(reference: str | Path | None, gff: str | Path | None, main_bam:
 
 
 # Ring key geometry, in data units of the map (ring radii run to ~1.18, labels to ~1.27, axes to +/-PLOT_LIMIT).
-KEY_RADIUS = 0.40          # outer radius of the 90-degree cut-out
+KEY_RADIUS = 0.40          # outer radius of the 90-degree cut-out (standalone maps)
+KEY_RADIUS_MAX = 0.50      # on small maps the key may grow up to this radius, so its rows keep legible spacing
+KEY_PITCH_PT = 5.0         # target row pitch in points when the key grows
 KEY_INNER = 0.08           # inner radius (the innermost band starts here)
 KEY_CLEARANCE = 1.30       # nearest point of the cut-out to the map center (clear of rings, ticks and outer labels)
 KEY_LABEL_CHARS = 17       # longest key label, used to reserve room for the label column
 KEY_FONT_RANGE = (3.6, 5.0)
 
 
-def _key_center() -> tuple[float, float]:
+def _key_center(radius: float = KEY_RADIUS) -> tuple[float, float]:
     """Center of the cut-out: at the bottom edge of the plot, as far left as the clearance from the map allows."""
     cy = -PLOT_LIMIT + 0.03
-    cx = float(np.sqrt(max(0.0, (KEY_CLEARANCE + KEY_RADIUS) ** 2 - cy ** 2)))
+    cx = float(np.sqrt(max(0.0, (KEY_CLEARANCE + radius) ** 2 - cy ** 2)))
     return cx, cy
 
 
+def _key_radius(n_layers: int, upp: float) -> float:
+    """Outer radius of the key: KEY_RADIUS, grown towards KEY_RADIUS_MAX when the map is small (large data units per point)
+    so each row gets about KEY_PITCH_PT points."""
+    return float(min(KEY_RADIUS_MAX, max(KEY_RADIUS, KEY_INNER + max(1, n_layers) * KEY_PITCH_PT * upp)))
+
+
 def _units_per_point_for(ax, xspan: float, yspan: float) -> float:
-    """Data units per point for an equal-aspect axes showing ``xspan`` x ``yspan`` inside its allocated box."""
+    """Data units per point for an equal-aspect axes showing ``xspan`` x ``yspan`` inside its allocated box
+    (the original, layout-allocated position, not the aspect-adjusted one)."""
     fig = ax.figure
-    pos = ax.get_position()
+    pos = ax.get_position(original=True)
     w_in = fig.get_size_inches()[0] * pos.width
     h_in = fig.get_size_inches()[1] * pos.height
     return max(xspan / (w_in * 72.0), yspan / (h_in * 72.0))
@@ -876,29 +885,41 @@ def _key_font(pitch: float, upp: float) -> float:
     return float(min(KEY_FONT_RANGE[1], max(KEY_FONT_RANGE[0], 0.8 * pitch / upp)))
 
 
-def track_legend_width(ax, n_layers: int = 8) -> float:
-    """Extra x range (data units, right of +PLOT_LIMIT) that the key's label column needs on this axes."""
-    cx, _ = _key_center()
-    pitch = (KEY_RADIUS - KEY_INNER) / max(1, n_layers)
-    width = 0.3
-    for _ in range(6):                                   # the scale depends on the width; converges in a few steps
+def track_legend_width(ax, n_layers: int = 1) -> float:
+    """Extra x range (data units, right of +PLOT_LIMIT) that the key's label column needs on this axes.
+
+    ``n_layers`` is an upper bound on the layers the key will list: fewer layers mean a larger pitch and so a larger font,
+    so the reservation is made for the font of ``n_layers`` and :func:`add_track_legend` never exceeds it (stored on the
+    axes). The default of one layer reserves room for the largest font."""
+    width, font, radius = 0.3, KEY_FONT_RANGE[1], KEY_RADIUS
+    for _ in range(8):                                   # the scale depends on the width; converges in a few steps
         upp = _units_per_point_for(ax, 2 * PLOT_LIMIT + width, 2 * PLOT_LIMIT)
-        right = cx + 0.03 + KEY_LABEL_CHARS * _key_font(pitch, upp) * 0.56 * upp + 0.02
+        radius = _key_radius(n_layers, upp)
+        cx, _ = _key_center(radius)
+        font = _key_font((radius - KEY_INNER) / max(1, n_layers), upp)
+        right = cx + 0.03 + KEY_LABEL_CHARS * font * 0.56 * upp + 0.02
         width = max(0.0, right - PLOT_LIMIT)
+    ax._redwood_key_font = font
+    ax._redwood_key_radius = radius
     return width
 
 
-def track_legend_layers(*, has_rnaseq: bool, has_annotation: bool, has_at: bool, has_variants: bool, has_numts: bool,
-                        has_multipass: bool, has_regular: bool) -> list[tuple[str, str]]:
-    """Layers present on a circular plot, innermost first, as ``(key, label)``."""
+def track_legend_layers(*, has_rnaseq: bool, has_at: bool, has_variants: bool, has_numts: bool, has_multipass: bool,
+                        has_regular: bool, has_annotation: bool = False, has_genes: bool | None = None,
+                        has_trna: bool | None = None) -> list[tuple[str, str]]:
+    """Layers present on a circular plot, innermost first, as ``(key, label)``. ``has_genes`` (CDS/rRNA) and ``has_trna``
+    default to ``has_annotation`` when not given."""
+    has_genes = has_annotation if has_genes is None else has_genes
+    has_trna = has_annotation if has_trna is None else has_trna
     layers = []
     if has_regular: layers.append(("regular", "single-pass reads"))
     if has_multipass: layers.append(("multipass", "multi-pass reads"))
     if has_numts: layers.append(("numts", "NUMT loci"))
     if has_at: layers.append(("at", "AT content"))
     if has_variants: layers.append(("variants", "variant columns"))
-    if has_annotation:
+    if has_genes:
         layers.append(("genes", "CDS / rRNA genes"))
+    if has_trna:
         layers.append(("trna", "tRNA genes"))
     if has_rnaseq: layers.append(("rnaseq", "RNA-seq depth"))
     return layers
@@ -917,14 +938,15 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
     from .multipass import MULTIPASS_COLORS
     fg = "#eef4fb" if dark else "#111827"
     tick = "#9aa8b7" if dark else "#667085"
-    center = _key_center()
-    cx, cy = center
     x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
     upp = _units_per_point_for(ax, abs(x1 - x0), abs(y1 - y0))
     n = len(layers)
-    pitch = (KEY_RADIUS - KEY_INNER) / n
+    radius = getattr(ax, "_redwood_key_radius", None) or _key_radius(n, upp)
+    center = _key_center(radius)
+    cx, cy = center
+    pitch = (radius - KEY_INNER) / n
     band = 0.78 * pitch
-    fontsize = _key_font(pitch, upp)
+    fontsize = min(_key_font(pitch, upp), getattr(ax, "_redwood_key_font", KEY_FONT_RANGE[1]))
     t1, t2 = 91.0, 179.0                      # angular extent of the cut-out (degrees, counter-clockwise from +x)
     rng = np.random.default_rng(7)
     smooth = np.convolve(rng.random(160), np.ones(9) / 9, mode="same")
@@ -996,7 +1018,7 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
                 h = band * (0.25 + 0.75 * smooth[j + 60])
                 wedge(r_in + h, r_in, edges[j], edges[j + 1] + 0.4, facecolor=BARK_COLOR if (j // 7) % 2 == 0 else BARK_COLOR_ALT, alpha=0.82)
         ax.text(cx + 0.03, cy + mid, label, ha="left", va="center", fontsize=fontsize, color=fg, zorder=6)
-    ax.text(cx + 0.03, cy + KEY_RADIUS + 0.035, "ring key", ha="left", va="bottom", fontsize=fontsize, color=tick,
+    ax.text(cx + 0.03, cy + radius + 0.035, "ring key", ha="left", va="bottom", fontsize=fontsize, color=tick,
             fontweight="bold", zorder=6)
     return n
 
@@ -1037,7 +1059,13 @@ def draw_circular_plot(
     rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
-    ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT + (track_legend_width(ax) if track_legend else 0.0))
+    if track_legend:
+        # upper bound on the layers the key can list, so the reserved label room is never exceeded
+        key_layers = ((1 if np.max(rnaseq_forward + rnaseq_reverse, initial=0) > 0 else 0) + (2 if gff else 0) + (1 if reference else 0)
+                      + (1 if variant_ring and reference and main_bam else 0) + (1 if numt_loci else 0) + (2 if main_bam else 0))
+        ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT + track_legend_width(ax, max(1, key_layers)))
+    else:
+        ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -1167,7 +1195,7 @@ def draw_circular_plot(
                 r_top - rung * rung_w,
                 rung_w,
                 wrap_ramp,
-                CLASS_COLORS[class_of[mp.name]] if class_of and class_of.get(getattr(mp, "name", "")) in CLASS_COLORS and class_of.get(mp.name) not in ("mito_only", "mito_multisegment") else MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
+                CLASS_COLORS[class_of[mp.name]] if class_of and class_of.get(getattr(mp, "name", "")) in CLASS_COLORS and class_of.get(mp.name) not in ("mito_only", "mito_multisegment", "mito+NUMT_homology") else MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
                 cigar=mp.cigar,
                 min_indel=min_indel,
                 marks=mp.marks if want_marks else None,
@@ -1185,7 +1213,7 @@ def draw_circular_plot(
             cls = class_of.get(getattr(read, "name", ""), None) if class_of else None
             if read.cigar:
                 add_cigar_read(ax, read.start, read.cigar, length, radius,
-                               min_indel, gradient=[CLASS_COLORS[cls]] if cls in CLASS_COLORS and cls not in ("mito_only", "mito_multisegment") else REDWOOD_GRADIENT)
+                               min_indel, gradient=[CLASS_COLORS[cls]] if cls in CLASS_COLORS and cls not in ("mito_only", "mito_multisegment", "mito+NUMT_homology") else REDWOOD_GRADIENT)
             else:
                 add_arc(
                     ax, read.start, read.start + read.span, length, radius,
@@ -1195,24 +1223,41 @@ def draw_circular_plot(
             if want_marks and read.marks:
                 add_read_marks(ax, read.start, read.marks, length, radius, mark_filter=mark_filter)
             layer_flags["has_regular"] = True
+        upp = units_per_point(ax)
+
+        def opening_at(y):                  # usable width of the central opening at height y
+            return 1.72 * float(np.sqrt(max(r_min ** 2 - y ** 2, 0.0)))
+
+        def centered_row(items, y, size, min_size, bold):
+            gap = 2.2
+            width = lambda fs: sum(len(t) * fs * (0.66 if bold else 0.56) * upp for t, _ in items) + (len(items) - 1) * gap * upp
+            while size > min_size and width(size) > opening_at(y):
+                size -= 0.2
+            x = -width(size) / 2
+            for text, color in items:
+                ax.text(x, y, text, ha="left", va="center", fontsize=size, color=color, zorder=6,
+                        fontweight="bold" if bold else "normal")
+                x += len(text) * size * (0.66 if bold else 0.56) * upp + gap * upp
+
         if class_of:
-            x = -0.24
-            for cls, text in (("mito+nuclear_at_NUMT_locus", "NUMT junction read"), ("mito+nuclear_elsewhere", "chimera / uncataloged NUMT"),
-                              ("nuclear_only_at_NUMT_locus", "nuclear (NUMT)")):
-                ax.text(x, -0.36, text, ha="left", va="center", fontsize=4.2, color=CLASS_COLORS[cls], zorder=6)
-                x += 0.02 + 0.0058 * len(text)
+            centered_row([(text, CLASS_COLORS[cls]) for cls, text in (
+                ("mito+nuclear_at_NUMT_locus", "NUMT junction"), ("mito+nuclear_elsewhere", "chimera"),
+                ("nuclear_only_at_NUMT_locus", "nuclear"))], -0.36, 4.6, 3.6, False)
         if want_marks:
-            legend = [("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del")]
-            x = -0.24
-            for kind, text in legend:
-                ax.text(x, -0.22, text, ha="left", va="center", fontsize=5.2, fontweight="bold",
-                        color=MARK_COLORS[kind], zorder=6)
-                x += 0.08 if len(text) == 1 else 0.11
-            ax.text(-0.24, -0.29, "read mismatches" + (" (shared)" if read_mismatches == "shared" else ""),
-                    ha="left", va="center", fontsize=4.6, color=tick_color, zorder=6)
+            centered_row([(t, MARK_COLORS[k]) for k, t in (("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del"))],
+                         -0.22, 5.2, 3.6, True)
+            caption = "read mismatches" + (" (shared)" if read_mismatches == "shared" else "")
+            size = 4.6
+            while size > 3.6 and len(caption) * size * 0.56 * upp > opening_at(-0.29):
+                size -= 0.2
+            if len(caption) * size * 0.56 * upp > opening_at(-0.29):
+                caption = "read mismatches"
+            ax.text(0, -0.29, caption, ha="center", va="center", fontsize=size, color=tick_color, zorder=6)
 
     if track_legend:
-        layers = track_legend_layers(has_rnaseq=bool(has_rnaseq), has_annotation=bool(features), has_at=bool(reference),
+        layers = track_legend_layers(has_rnaseq=bool(has_rnaseq), has_at=bool(reference),
+                                     has_genes=any(str(f["type"]) != "tRNA" for f in features),
+                                     has_trna=any(str(f["type"]) == "tRNA" for f in features),
                                      has_numts=bool(numt_rows), **layer_flags)
         add_track_legend(ax, layers, dark=dark, has_marks=(read_mismatches != "none" and reference is not None))
     ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")

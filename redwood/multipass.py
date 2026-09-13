@@ -87,6 +87,11 @@ def read_marks(read, reference_seq: str, true_length: int, min_indel: int = 1) -
         last_ref = rpos
     if del_run >= min_indel and del_start is not None:
         marks.append((del_start - start, "D"))
+    # an insertion as the last aligned operation has no following reference base; take it from the CIGAR so a trailing soft
+    # clip (also unaligned) is not mistaken for one
+    ops = [(op, n) for op, n in (read.cigartuples or []) if op not in (4, 5)]
+    if ops and ops[-1][0] == 1 and ops[-1][1] >= min_indel and last_ref is not None:
+        marks.append((last_ref - start, "I"))
     return marks
 
 

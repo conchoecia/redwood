@@ -13,6 +13,8 @@ NUMT-derived reads, or a systematic sequencing error).
 from __future__ import annotations
 
 import collections
+
+import numpy as np
 import json
 from pathlib import Path
 
@@ -88,6 +90,7 @@ def column_variants(
         raise ValueError("empty reference sequence")
     base_counts = {b: [0] * length for b in BASES}
     del_counts = [0] * length
+    span_depth = np.zeros(length, dtype=np.int64)       # reads whose alignment covers the column (M/=/X or D), no quality filter
     insertions = [collections.Counter() for _ in range(length)]
     with pysam.AlignmentFile(str(bam_path), "rb") as bam:
         contigs = [contig] if contig else list(bam.references)
@@ -107,9 +110,12 @@ def column_variants(
                 for i, v in enumerate(arr):
                     if v:
                         target[i % length] += int(v)
+            diff = np.zeros(ref_len + 1, dtype=np.int64)
             for read in bam.fetch(name, 0, ref_len):
                 if not _keep(read) or read.cigartuples is None:
                     continue
+                for bs, be in read.get_blocks():
+                    diff[bs] += 1; diff[be] -= 1
                 seq = read.query_sequence
                 rpos, qpos, last_ref = read.reference_start, 0, None
                 for op, n in read.cigartuples:
@@ -118,6 +124,7 @@ def column_variants(
                     elif op == 2:                # D
                         for k in range(n):
                             del_counts[(rpos + k) % length] += 1
+                        diff[rpos] += 1; diff[min(rpos + n, ref_len)] -= 1
                         rpos += n; last_ref = rpos - 1
                     elif op == 3:                # N
                         rpos += n; last_ref = rpos - 1
@@ -127,6 +134,7 @@ def column_variants(
                         qpos += n
                     elif op == 4:                # S
                         qpos += n
+            np.add.at(span_depth, np.arange(ref_len) % length, np.cumsum(diff[:-1]))
     rows = []
     for pos in range(length):
         c = {b: base_counts[b][pos] for b in BASES}
@@ -146,7 +154,9 @@ def column_variants(
             "pos": pos + 1, "ref": ref, "depth": depth, "A": c["A"], "C": c["C"], "G": c["G"], "T": c["T"],
             "del": c["del"], "ins": ins_total, "ins_seq": ins_seq, "major": major,
             "major_frac": round(major_frac, 4), "minor_frac": round(1 - major_frac, 4),
-            "ins_frac": round(ins_total / depth, 4), "events": "",
+            # insertions are counted from every kept read, so their fraction uses the read depth over the column (not the
+            # base-quality-filtered base depth, which can be smaller and push the fraction above 1)
+            "ins_frac": round(ins_total / max(int(span_depth[pos]), 1), 4), "events": "",
         })
     covered = [r for r in rows if int(r["depth"]) >= min_depth]
     minor_thr, ins_thr = min_minor_frac, min_minor_frac
