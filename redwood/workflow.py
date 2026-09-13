@@ -376,6 +376,19 @@ def write_metrics(args: argparse.Namespace) -> dict[str, object]:
         metrics["tracks"]["long_reads"] = bam_depth_metrics(Path(args.long_bam), len(sequence))
     if args.rnaseq_bam:
         metrics["tracks"]["rnaseq"] = bam_depth_metrics(Path(args.rnaseq_bam), len(sequence))
+    variants_prefix = getattr(args, "variants_prefix", None)
+    if variants_prefix:
+        from .variants import write_variants
+
+        for track, bam in (("long_reads", args.long_bam), ("rnaseq", args.rnaseq_bam)):
+            if not bam:
+                continue
+            table = Path(f"{variants_prefix}.{track}.tsv")
+            metrics["tracks"][track]["variants"] = write_variants(
+                Path(bam), Path(args.mito_fasta), table,
+                min_minor_frac=getattr(args, "min_minor_frac", 0.05),
+                min_base_quality=getattr(args, "min_base_quality", 20),
+            )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(metrics, indent=2) + "\n")
@@ -557,6 +570,9 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
             long_bam=str(long_bam) if long_bam else None,
             rnaseq_bam=str(rnaseq_bam) if rnaseq_bam else None,
             output=outdir / "redwood.metrics.json",
+            variants_prefix=str(outdir / "redwood.variants"),
+            min_minor_frac=getattr(args, "min_minor_frac", 0.05),
+            min_base_quality=getattr(args, "min_base_quality", 20),
         )
         results["metrics"] = write_metrics(metrics_args)
 
@@ -608,6 +624,11 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 title=None,
                 subtitle=None,
                 extra_tracks=[],
+                read_mismatches=getattr(args, "read_mismatches", "shared"),
+                no_variant_ring=getattr(args, "no_variant_ring", False),
+                variant_table=str(outdir / "redwood.variants.long_reads.tsv")
+                if (outdir / "redwood.variants.long_reads.tsv").exists() else None,
+                min_minor_frac=getattr(args, "min_minor_frac", 0.05),
             )
             plot_args.ont_preprocessing = results.get("long_reads", {}).get("ont_preprocessing")
             run_plot(plot_args)

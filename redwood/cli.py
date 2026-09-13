@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from .renderer import run_plot
+from .variants import run_variants
 from .workflow import (
     map_long,
     map_rnaseq,
@@ -172,6 +173,20 @@ def build_parser():
         help="Do not label CDS/rRNA/gene features.",
     )
     parser_plot.add_argument(
+        "--read-mismatches", dest="read_mismatches", choices=["shared", "all", "none"], default="shared",
+        help="IGV-style marks on the read rings (needs --mito-fasta): 'shared' marks mismatches only at columns "
+             "where the read population disagrees with the reference above --min-minor-frac, 'all' marks every "
+             "mismatch, 'none' disables them. Insertions/deletions >= --min-indel are always marked.",
+    )
+    parser_plot.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true",
+                             help="Do not draw the per-column disagreement ring inside the annotation.")
+    parser_plot.add_argument("--variant-table", dest="variant_table", action=FullPaths,
+                             help="Use this redwood variants TSV (e.g. from the whole read set) instead of computing "
+                                  "column disagreement from --main-bam.")
+    parser_plot.add_argument("--min-minor-frac", dest="min_minor_frac", type=float, default=0.05,
+                             help="Minor-allele fraction that flags a column (default 0.05; scaled up to 3x the "
+                                  "table-wide median for noisy reads, see `redwood variants --noise-multiplier`).")
+    parser_plot.add_argument(
         "--extra-track",
         dest="extra_tracks",
         choices=["at", "gc", "rnaseq-strand", "metrics"],
@@ -284,6 +299,26 @@ def build_parser():
     add_topology_argument(parser_metrics)
     parser_metrics.set_defaults(func=write_metrics)
 
+    parser_variants = subparsers.add_parser(
+        "variants",
+        help="per-column table of read mismatches, insertions and deletions against the mitogenome",
+    )
+    parser_variants.add_argument("--mito-fasta", required=True, type=Path)
+    parser_variants.add_argument("--bam", required=True, type=Path,
+                                 help="Reads mapped to the mitogenome (single-copy or the doubled reference).")
+    parser_variants.add_argument("--output", required=True, type=Path, help="TSV of flagged columns.")
+    parser_variants.add_argument("--summary", type=Path, help="Optional JSON summary.")
+    parser_variants.add_argument("--contig", help="Restrict to one BAM contig (default: all).")
+    parser_variants.add_argument("--all-columns", action="store_true", help="Write every column, not only flagged ones.")
+    parser_variants.add_argument("--min-base-quality", type=int, default=20)
+    parser_variants.add_argument("--min-depth", type=int, default=5)
+    parser_variants.add_argument("--min-minor-frac", type=float, default=0.05,
+                                 help="Flag a column as 'minor' / 'insertion' when the fraction reaches this (default 0.05).")
+    parser_variants.add_argument("--noise-multiplier", type=float, default=3.0,
+                                 help="Flag thresholds = max(--min-minor-frac, this x the table-wide median fraction), so "
+                                      "noisy CLR/ONT reads flag only columns above their error level (0 = fixed threshold).")
+    parser_variants.set_defaults(func=run_variants)
+
     parser_run = subparsers.add_parser(
         "run",
         help="run an end-to-end local redwood workflow from references and reads",
@@ -306,6 +341,12 @@ def build_parser():
     parser_run.add_argument("--long-read-depth", type=float, default=100.0)
     parser_run.add_argument("--max-reads", type=int,
                             help="Displayed reads (default: 30 for one-column linear, otherwise 80).")
+    parser_run.add_argument("--min-minor-frac", type=float, default=0.05,
+                            help="Variant table / marks: flag columns whose minor-allele or insertion fraction reaches this.")
+    parser_run.add_argument("--min-base-quality", type=int, default=20, help="Variant table: minimum base quality.")
+    parser_run.add_argument("--read-mismatches", dest="read_mismatches", choices=["shared", "all", "none"], default="shared",
+                            help="IGV-style mismatch marks on the read rings (see `redwood plot --help`).")
+    parser_run.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true")
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")

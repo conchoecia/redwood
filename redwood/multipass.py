@@ -31,6 +31,7 @@ class MultiPassRead:
     span: int        # reference span in bp
     # pysam CIGAR tuples in (op_code, length) order — for indel rendering.
     cigar: list[tuple[int, int]] = field(default_factory=list)
+    marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
 
 
 @dataclass
@@ -41,6 +42,50 @@ class RegularRead:
     # pysam CIGAR tuples in (op_code, length) order — kept so the renderer can
     # draw per-read insertions and deletions.
     cigar: list[tuple[int, int]] = field(default_factory=list)
+    marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
+
+
+def read_marks(read, reference_seq: str, true_length: int, min_indel: int = 1) -> list[tuple[int, str]]:
+    """IGV-style marks of one alignment against the reference: ``(offset, kind)`` with ``offset`` the
+    reference distance from the alignment start and ``kind`` the read base at a mismatch (A/C/G/T),
+    ``I`` for an insertion of >= ``min_indel`` bp (placed at the preceding reference base) or ``D``
+    for a deletion of >= ``min_indel`` bp (placed at its first deleted base). Positions are folded
+    onto the single-copy circle so doubled references work."""
+    marks: list[tuple[int, str]] = []
+    seq = read.query_sequence
+    if not seq:
+        return marks
+    start = read.reference_start
+    ins_run = 0
+    last_ref = None
+    del_run = 0
+    del_start = None
+    for qpos, rpos in read.get_aligned_pairs():
+        if rpos is None:            # insertion (or soft clip: qpos with no reference)
+            if last_ref is not None:
+                ins_run += 1
+            continue
+        if ins_run:
+            if ins_run >= min_indel:
+                marks.append((last_ref - start, "I"))
+            ins_run = 0
+        if qpos is None:            # deletion / reference skip
+            if del_run == 0:
+                del_start = rpos
+            del_run += 1
+            last_ref = rpos
+            continue
+        if del_run:
+            if del_run >= min_indel:
+                marks.append((del_start - start, "D"))
+            del_run = 0
+        base = seq[qpos].upper()
+        if base in "ACGT" and base != reference_seq[rpos % true_length].upper():
+            marks.append((rpos - start, base))
+        last_ref = rpos
+    if del_run >= min_indel and del_start is not None:
+        marks.append((del_start - start, "D"))
+    return marks
 
 
 def classify_circular_reads(
@@ -49,6 +94,8 @@ def classify_circular_reads(
     *,
     max_internal_gap: int = 50,
     min_pass_fraction: float = 1.0,
+    reference_seq: str | None = None,
+    min_indel: int = 1,
 ) -> tuple[list[MultiPassRead], list[RegularRead]]:
     """Split primary alignments into multi-pass (RCA) and regular reads.
 
@@ -75,11 +122,12 @@ def classify_circular_reads(
                 if op in _GAP_OPS and oplen > biggest_gap:
                     biggest_gap = oplen
             continuous = biggest_gap <= max_internal_gap
+            marks = read_marks(read, reference_seq, true_length, min_indel) if reference_seq else []
             if continuous and span >= min_pass_fraction * true_length:
                 multipass.append(
-                    MultiPassRead(start, span / true_length, span, cigar))
+                    MultiPassRead(start, span / true_length, span, cigar, marks))
             else:
-                regular.append(RegularRead(start, min(span, true_length), cigar))
+                regular.append(RegularRead(start, min(span, true_length), cigar, marks))
     # draw the longest spirals first (outermost)
     multipass.sort(key=lambda r: r.passes, reverse=True)
     return multipass, regular
