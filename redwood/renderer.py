@@ -36,6 +36,10 @@ FEATURE_COLORS = {
     "tRNA": "#d870a2",
 }
 
+# IGV-style read marks: mismatched read base, insertion, deletion.
+MARK_COLORS = {"A": "#009900", "C": "#0000ff", "G": "#d17105", "T": "#ff0000", "I": "#800080", "D": "#000000"}
+VARIANT_RING_COLORS = {"mismatch": "#d62728", "deletion": "#000000", "insertion": "#800080", "minor": "#f28e2b"}
+
 # Regular read arcs: nominal radial thickness, plus per-CIGAR-op widths so a
 # read visibly shows insertions (fat bulge) and deletions (thin near-gap).
 READ_ARC_WIDTH = 0.0058
@@ -171,6 +175,9 @@ def add_spiral_read(
     min_indel: int = 10,
     base_linewidth: float = 0.9,
     points_per_turn: int = 540,
+    marks: list[tuple[int, str]] | None = None,
+    mark_filter: set[int] | None = None,
+    mark_indels: bool = True,
 ) -> None:
     """Draw a multi-pass (rolling-circle) read as an inward spiral.
 
@@ -225,6 +232,89 @@ def add_spiral_read(
             solid_joinstyle="round",
             zorder=3,
         )
+    if marks:
+        span_bp = passes * length
+        for offset, kind in marks:
+            if offset < 0 or offset >= span_bp:
+                continue
+            if kind in ("I", "D"):
+                if not mark_indels:
+                    continue
+            elif mark_filter is not None and ((start_pos + offset) % length) not in mark_filter:
+                continue
+            t = offset / length
+            k = int(max(0.0, t - 1e-9))
+            f = t - k
+            r = r_outer - rung_width * (k if f <= 1.0 - wrap_ramp else k + (f - (1.0 - wrap_ramp)) / wrap_ramp)
+            x, y = polar_xy(r, a0 - t * 360.0)
+            ax.plot([x], [y], marker="o", ms=base_linewidth * 1.4, mew=0, color=MARK_COLORS[kind], zorder=4)
+
+
+def add_read_marks(
+    ax,
+    start: int,
+    marks: list[tuple[int, str]],
+    length: int,
+    radius: float,
+    width: float = READ_ARC_WIDTH,
+    mark_filter: set[int] | None = None,
+    mark_indels: bool = True,
+) -> int:
+    """Overlay IGV-style marks on a regular read arc drawn at ``radius`` (outer edge). ``marks`` are
+    ``(offset, kind)`` from :func:`redwood.multipass.read_marks`; mismatch marks are restricted to
+    ``mark_filter`` positions when given (0-based, folded). Returns the number of marks drawn."""
+    half = max(2.0, length / 1400.0)      # keep a mark visible at any genome length
+    centerline = radius - width / 2
+    drawn = 0
+    for offset, kind in marks:
+        if offset < 0 or offset >= length:
+            continue
+        pos = (start + offset) % length
+        if kind in ("I", "D"):
+            if not mark_indels:
+                continue
+        elif mark_filter is not None and pos not in mark_filter:
+            continue
+        add_arc(ax, int(pos - half), int(pos + half) + 1, length, centerline + width / 2, width,
+                color=MARK_COLORS[kind], alpha=1.0, linewidth=0, zorder=4)
+        drawn += 1
+    return drawn
+
+
+def add_variant_ring(ax, rows: list[dict[str, object]], length: int, r_in: float = 0.958, r_out: float = 0.998) -> int:
+    """Per-column disagreement ring: one bar per flagged column, height = minor-allele fraction
+    (full height for columns whose majority differs from the reference), coloured by event."""
+    half = max(2.0, length / 1400.0)
+    drawn = 0
+    ax.add_patch(plt.Circle((0, 0), r_in, fill=False, lw=0.3, color="#c8ced8", zorder=1))
+    for row in rows:
+        events = str(row.get("events", "")).split(",")
+        if "mismatch" in events or "deletion" in events:
+            kind, frac = ("deletion" if "deletion" in events else "mismatch"), 1.0
+        elif "insertion" in events:
+            kind, frac = "insertion", max(float(row.get("ins_frac", 0.0)), float(row.get("minor_frac", 0.0)))
+        elif "minor" in events:
+            kind, frac = "minor", float(row.get("minor_frac", 0.0))
+        else:
+            continue
+        pos = int(row["pos"]) - 1
+        h = (r_out - r_in) * max(0.15, min(1.0, frac))
+        add_arc(ax, int(pos - half), int(pos + half) + 1, length, r_in + h, h,
+                color=VARIANT_RING_COLORS[kind], alpha=0.95, linewidth=0, zorder=2)
+        drawn += 1
+    return drawn
+
+
+def load_variant_table(path: Path) -> list[dict[str, object]]:
+    rows = []
+    lines = Path(path).read_text().splitlines()
+    if not lines:
+        return rows
+    header = lines[0].split("\t")
+    for line in lines[1:]:
+        if line:
+            rows.append(dict(zip(header, line.split("\t"))))
+    return rows
 
 
 def _gradient_color(stops: list[str], frac: float):
@@ -735,6 +825,10 @@ def draw_circular_plot(
     min_indel: int = 10,
     trna_labels: str = "letter",
     feature_labels: bool = True,
+    read_mismatches: str = "shared",
+    variant_ring: bool = True,
+    variant_table: Path | None = None,
+    min_minor_frac: float = 0.05,
 ) -> None:
     fg = "#eef4fb" if dark else "#111827"
     rna_forward = "#b6906a" if dark else BARK_COLOR
@@ -810,11 +904,31 @@ def draw_circular_plot(
     # (add_cigar_read), spirals as line-width changes (add_spiral_read).
     r_top, r_min, rung_w = 0.894, 0.40, 0.0087
     if main_bam is not None and Path(str(main_bam)).exists():
+        # Column-level disagreement of the read population with the reference (mismatch / indel table):
+        # drives the variant ring and, in "shared" mode, which per-read mismatches are marked.
+        variant_rows: list[dict[str, object]] = []
+        if reference and (variant_ring or read_mismatches == "shared"):
+            if variant_table and Path(str(variant_table)).exists():
+                variant_rows = load_variant_table(Path(str(variant_table)))
+            else:
+                from .variants import column_variants, flagged_rows
+
+                rows, _ = column_variants(Path(str(main_bam)), reference, min_minor_frac=min_minor_frac)
+                variant_rows = flagged_rows(rows)
+        mark_filter: set[int] | None = None
+        if read_mismatches == "shared":
+            mark_filter = {int(r["pos"]) - 1 for r in variant_rows
+                           if any(tag in str(r.get("events", "")).split(",") for tag in ("mismatch", "minor"))}
+        if variant_ring and reference and variant_rows:
+            add_variant_ring(ax, variant_rows, length)
+        want_marks = read_mismatches != "none" and reference is not None
         multipass_reads, regular_reads = classify_circular_reads(
             Path(str(main_bam)),
             length,
             max_internal_gap=max_internal_gap,
             min_pass_fraction=min_pass_fraction if multipass else 1e9,
+            reference_seq=reference if want_marks else None,
+            min_indel=min_indel,
         )
         # Multi-pass spirals get at most MULTIPASS_RADIUS_FRACTION of the read
         # band. classify_circular_reads returns them sorted longest-first;
@@ -842,6 +956,8 @@ def draw_circular_plot(
                 MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
                 cigar=mp.cigar,
                 min_indel=min_indel,
+                marks=mp.marks if want_marks else None,
+                mark_filter=mark_filter,
             )
             rung += n_rungs
         if selected:
@@ -860,6 +976,17 @@ def draw_circular_plot(
                     READ_ARC_WIDTH, color=REDWOOD_GRADIENT[1], alpha=0.85,
                     linewidth=0,
                 )
+            if want_marks and read.marks:
+                add_read_marks(ax, read.start, read.marks, length, radius, mark_filter=mark_filter)
+        if want_marks:
+            legend = [("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del")]
+            x = -0.24
+            for kind, text in legend:
+                ax.text(x, -0.22, text, ha="left", va="center", fontsize=5.2, fontweight="bold",
+                        color=MARK_COLORS[kind], zorder=6)
+                x += 0.08 if len(text) == 1 else 0.11
+            ax.text(-0.24, -0.29, "read mismatches" + (" (shared)" if read_mismatches == "shared" else ""),
+                    ha="left", va="center", fontsize=4.6, color=tick_color, zorder=6)
 
     ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")
     ax.text(0, -0.085, "bp", ha="center", va="center", color=tick_color, fontsize=7)
@@ -902,6 +1029,10 @@ def plot_file(
     min_indel: int = 10,
     trna_labels: str = "letter",
     feature_labels: bool = True,
+    read_mismatches: str = "shared",
+    variant_ring: bool = True,
+    variant_table: Path | None = None,
+    min_minor_frac: float = 0.05,
 ) -> None:
     bg = "#0d1117" if dark else "#ffffff"
     edge = "#303946" if dark else "#d8dee8"
@@ -932,6 +1063,10 @@ def plot_file(
         min_indel=min_indel,
         trna_labels=trna_labels,
         feature_labels=feature_labels,
+        read_mismatches=read_mismatches,
+        variant_ring=variant_ring,
+        variant_table=variant_table,
+        min_minor_frac=min_minor_frac,
     )
     fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
     print_images(
@@ -982,6 +1117,10 @@ def run_plot(args) -> None:
         min_indel=getattr(args, "min_indel", 10),
         trna_labels=getattr(args, "trna_labels", "letter"),
         feature_labels=not getattr(args, "no_feature_labels", False),
+        read_mismatches=getattr(args, "read_mismatches", "shared"),
+        variant_ring=not getattr(args, "no_variant_ring", False),
+        variant_table=Path(args.variant_table) if getattr(args, "variant_table", None) else None,
+        min_minor_frac=getattr(args, "min_minor_frac", 0.05),
     )
 
 

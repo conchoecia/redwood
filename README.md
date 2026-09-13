@@ -207,6 +207,31 @@ with the one-letter amino-acid code (`S2`, `L2` for the second copies); use `--t
 for the full GFF names, `--trna-labels none` to hide them, and `--no-feature-labels` to hide the
 gene labels.
 
+## Mismatches, insertions and deletions
+
+With `--mito-fasta`, the read rings carry IGV-style marks against the reference: a mismatched read
+base in the IGV base colours (A green, C blue, G orange, T red), insertions purple and deletions
+black (indels of at least `--min-indel` bp, the same threshold as the width changes). By default
+(`--read-mismatches shared`) a mismatch is marked only at columns where the read population
+disagrees with the reference above `--min-minor-frac` (default 5 %), so haplotype differences,
+NUMT-derived reads and consensus errors stand out while random ONT/CLR errors stay quiet;
+`--read-mismatches all` marks every mismatch, `none` turns them off. A thin ring just inside the
+annotation (`--no-variant-ring` to hide) shows every flagged column, bar height = minor-allele
+fraction and full height where the majority of reads differs from the reference (red mismatch,
+black deletion, purple insertion, orange minor allele).
+
+The same information is written as a table: `redwood run` produces
+`redwood.variants.long_reads.tsv` (and `redwood.variants.rnaseq.tsv`) with per-column A/C/G/T/
+deletion counts, insertion counts and the most common inserted sequence, majority allele and
+minor-allele fraction, tagged `mismatch`, `deletion`, `insertion` or `minor`; counts per tag go into
+`redwood.metrics.json`. Positions are folded onto the single-copy molecule even when the BAM was
+mapped to the doubled reference. The table can be made from any BAM:
+
+```bash
+redwood variants --mito-fasta mitochondrion.fa --bam reads.bam --output variants.tsv \
+  --summary variants.json --min-minor-frac 0.05 [--all-columns]
+```
+
 ## Notes
 
 This repository keeps the original redwood plotting lineage from
