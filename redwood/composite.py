@@ -295,6 +295,21 @@ def plot_journal_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: di
                       title=f"NUMT catalog: {len(loci)} loci, {sum(r.get('mtdna_bp', r['mito_bp']) for r in loci):,} bp of mtDNA in the nuclear genome")
     ax2.set_ylabel("identity (%)", fontsize=min(7, tpt[1]))
     figure_bottom = cursor - h_cat - 0.30
+    # keep every panel, tick labels included, inside the figure width: panels whose labels overhang the right edge (the last
+    # tick label of b, the color bar's labels) are narrowed by exactly the overhang
+    right_limit = X0 + W
+    for _ in range(3):
+        fig.canvas.draw()
+        rend = fig.canvas.get_renderer()
+        moved = False
+        for ax in [a for a in fig.axes if a is not ax0]:
+            over = ax.get_tightbbox(rend).x1 / fig.dpi - right_limit
+            if over > 1e-3:
+                pos = ax.get_position(original=True)
+                ax.set_position([pos.x0, pos.y0, max(0.2 * pos.width, pos.width - (over + 0.01) / PW), pos.height])
+                moved = True
+        if not moved:
+            break
     fig.canvas.draw()
     rend = fig.canvas.get_renderer()
     for letter, ax in zip(letters, (ax0, ax_sz, ax1, ax2)):

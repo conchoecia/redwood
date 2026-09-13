@@ -85,6 +85,15 @@ def test_figure_layout_is_the_figure_width_and_keeps_text_in_range(inputs):
     sizes = {round(t.get_fontsize(), 2) for t in _texts(fig)}
     assert min(sizes) >= 5.0 and max(sizes) <= 8.0                     # 5-7 pt text, 8 pt panel letters
     assert {"a", "b", "c", "d"} <= {t.get_text() for t in _texts(fig)}
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    width_px = fig.get_size_inches()[0] * fig.dpi
+    for ax in fig.axes:                                                 # nothing drawn is clipped at the figure's edges
+        bb = ax.get_tightbbox(rend)                                     # (tight bboxes count only the tick labels actually drawn)
+        assert bb.x0 >= -0.5 and bb.x1 <= width_px + 0.5, (ax.get_title(loc="left")[:30] or ax.get_xlabel(), bb.x0, bb.x1, width_px)
+    for t in fig.texts:
+        bb = t.get_window_extent(rend)
+        assert bb.x0 >= -0.5 and bb.x1 <= width_px + 0.5, (t.get_text(), bb.x0, bb.x1, width_px)
     md = Path(res["legend_markdown"]).read_text()
     assert md.startswith("**Mitochondrial genome and nuclear mitochondrial insertions (NUMTs) of *Genus species*.**")
     assert "Circular map of the 8,000-bp mitogenome" in md
