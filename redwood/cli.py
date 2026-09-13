@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 
 from .renderer import run_plot
+from .numts import run_numts
+from .composite import STYLES, run_composite
 from .variants import run_variants
 from .workflow import (
     map_long,
@@ -178,8 +180,14 @@ def build_parser():
              "where the read population disagrees with the reference above --min-minor-frac, 'all' marks every "
              "mismatch, 'none' disables them. Insertions/deletions >= --min-indel are always marked.",
     )
+    parser_plot.add_argument("--numt-loci", dest="numt_loci", action=FullPaths,
+                             help="redwood numts loci TSV: draws a ring of the mitogenome intervals present as NUMTs, colored by identity.")
+    parser_plot.add_argument("--circular-read-classes", dest="circular_read_classes", action=FullPaths,
+                             help="redwood numts read-class TSV: color read arcs by class (NUMT junction reads red, chimeras purple, ...).")
     parser_plot.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true",
                              help="Do not draw the per-column disagreement ring inside the annotation.")
+    parser_plot.add_argument("--no-track-legend", dest="no_track_legend", action="store_true",
+                             help="Omit the ring key (90-degree cut-out of the track stack drawn to the right of the map).")
     parser_plot.add_argument("--variant-table", dest="variant_table", action=FullPaths,
                              help="Use this redwood variants TSV (e.g. from the whole read set) instead of computing "
                                   "column disagreement from --main-bam.")
@@ -319,6 +327,78 @@ def build_parser():
                                       "noisy CLR/ONT reads flag only columns above their error level (0 = fixed threshold).")
     parser_variants.set_defaults(func=run_variants)
 
+    parser_numts = subparsers.add_parser(
+        "numts",
+        help="catalog NUMTs in a nuclear assembly, classify reads as mitochondrial or NUMT-derived, draw NUMT figures",
+    )
+    parser_numts.add_argument("--mito-fasta", required=True, type=Path)
+    parser_numts.add_argument("--nuclear-fasta", required=True, type=Path, help="Nuclear assembly (exclude any mitochondrial scaffold first).")
+    parser_numts.add_argument("--outdir", required=True, type=Path)
+    parser_numts.add_argument("--gff", type=Path, help="Mitogenome annotation (drawn under the catalog panel).")
+    parser_numts.add_argument("--long-reads", type=Path, nargs="+", help="Long reads to map to nuclear + mito and classify.")
+    parser_numts.add_argument("--long-read-preset", default="map-hifi")
+    parser_numts.add_argument("--bam", type=Path, help="Existing BAM of reads vs nuclear + mito (minimap2 -Y --secondary=no) instead of --long-reads.")
+    parser_numts.add_argument("--mito-bam", type=Path, help="Reads mapped to the mitogenome alone; a copy tagged PO:Z=<class> is written.")
+    parser_numts.add_argument("--blastn", action="store_true", help="Also run blastn -task dc-megablast for short/diverged fragments (needs BLAST+).")
+    parser_numts.add_argument("--merge", type=int, default=3000, help="Merge hits within this distance into one locus (default 3000).")
+    parser_numts.add_argument("--pad", type=int, default=2000, help="A nuclear read segment within this distance of a locus counts as 'at the locus'.")
+    parser_numts.add_argument("--min-flank", dest="min_flank", type=int, default=500,
+                              help="A mito+nuclear read counts as a NUMT junction read only with this much nuclear sequence outside the locus.")
+    parser_numts.add_argument("--flank", type=int, default=1000, help="Junction support: alignment must extend this far on both sides of a locus end.")
+    parser_numts.add_argument("--threads", type=int, default=8)
+    parser_numts.add_argument("--dpi", type=int, default=200)
+    parser_numts.add_argument("--figure", action="store_true", help="Also draw the composite figure: circular map, landscape, catalog.")
+    parser_numts.add_argument("--figure-name", default="mitogenome_numts")
+    parser_numts.add_argument("--figure-bam", type=Path, help="Long-read BAM for the circular panel (e.g. redwood long_reads.redwood.bam).")
+    parser_numts.add_argument("--figure-rnaseq-bam", type=Path)
+    parser_numts.add_argument("--figure-variant-table", type=Path)
+    parser_numts.set_defaults(func=run_numts)
+
+    parser_comp = subparsers.add_parser(
+        "composite",
+        help="journal-style figure: circular map + NUMT panels, as a figure or a full page with the legend",
+        description="Draw the mitogenome map with the NUMT panels laid out to a journal style. Styles set the figure width, text "
+                    "and panel-label sizes, fonts, page geometry and legend format; every setting can be overridden.",
+    )
+    gi = parser_comp.add_argument_group("inputs")
+    gi.add_argument("--mito-fasta", required=True, type=Path)
+    gi.add_argument("--numt-loci", required=True, type=Path, help="numts.loci.tsv from redwood numts.")
+    gi.add_argument("--nuclear-fasta", required=True, type=Path, help="Nuclear assembly used for the catalog (its .fai gives the sequence lengths).")
+    gi.add_argument("--gff", type=Path, help="Mitogenome annotation.")
+    gi.add_argument("--long-read-bam", type=Path, help="Reads on the multiplied reference (redwood long_reads.redwood.bam).")
+    gi.add_argument("--rnaseq-bam", type=Path)
+    gi.add_argument("--variant-table", type=Path, help="redwood variants TSV for the variant ring.")
+    go = parser_comp.add_argument_group("output")
+    go.add_argument("--output-base", required=True, type=Path, help="Writes <base>.pdf/.png and <base>.legend.md.")
+    go.add_argument("--fileform", nargs="+", default=["pdf", "png"])
+    go.add_argument("--dpi", type=int, default=300)
+    gs = parser_comp.add_argument_group("layout and style")
+    gs.add_argument("--style", choices=sorted(STYLES), default="nature-communications")
+    gs.add_argument("--layout", choices=["figure", "page"], default="page",
+                    help="figure: just the figure at the figure width; page: the figure on a page with the legend underneath (default).")
+    gs.add_argument("--page", help="Page size: letter, a4, nature-communications or WxH with a unit (210x279mm, 8.5x11in). Default: the style's page.")
+    gs.add_argument("--figure-width", help="Figure width, e.g. 170mm or 6.7in. Default: the style's width (nature-communications: 170 mm).")
+    gs.add_argument("--figure-margin", default="0mm",
+                    help="Blank margin around the figure in --layout figure (e.g. 2mm); default 0, so the file is exactly the figure width.")
+    gs.add_argument("--legend-columns", type=int, choices=[1, 2], help="Legend columns (nature-communications: 2).")
+    gs.add_argument("--panel-labels", choices=["lower", "upper"], help="Panel letters a-d or A-D (default: the style's).")
+    gs.add_argument("--panel-label-size", type=float, help="Panel letter size in pt (nature-communications: 8).")
+    gs.add_argument("--text-size", type=float, nargs=2, metavar=("MIN", "MAX"), help="Figure text size range in pt (nature-communications: 5 7).")
+    gs.add_argument("--font", action="append", help="Font family to try first (repeatable). The style's list follows (Helvetica, Arial, ...).")
+    gs.add_argument("--font-dir", action="append", help="Directory of .ttf/.otf fonts to register (repeatable).")
+    gl = parser_comp.add_argument_group("label and legend")
+    gl.add_argument("--figure-label", help='Exact label, e.g. "Figure S4" or "Supplementary Fig. 4" (overrides the options below).')
+    gl.add_argument("--figure-number", help="Figure number; the label is the style's prefix + number.")
+    gl.add_argument("--supplementary", action="store_true", help="Use the style's supplementary prefix (nature-communications: Supplementary Fig.).")
+    gl.add_argument("--label-prefix", help='Prefix word to use with --figure-number instead of the style\'s, e.g. "Supplementary Figure".')
+    gl.add_argument("--species", help="Species name for the default title (set in italics).")
+    gl.add_argument("--title", help="Title sentence after the label; markup: **bold**, *italic*.")
+    gl.add_argument("--caption-file", type=Path, help="Legend body with markup and {fields}; default: a generated description of panels a-d.")
+    gl.add_argument("--caption-append", help="Sentence(s) appended to the legend body.")
+    gl.add_argument("--field", action="append", metavar="KEY=VALUE", help="Extra {KEY} value for the legend text (repeatable).")
+    gl.add_argument("--no-legend", action="store_true", help="No legend on the page and no <base>.legend.md.")
+    parser_comp.set_defaults(func=run_composite)
+
     parser_run = subparsers.add_parser(
         "run",
         help="run an end-to-end local redwood workflow from references and reads",
@@ -347,6 +427,7 @@ def build_parser():
     parser_run.add_argument("--read-mismatches", dest="read_mismatches", choices=["shared", "all", "none"], default="shared",
                             help="IGV-style mismatch marks on the read rings (see `redwood plot --help`).")
     parser_run.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true")
+    parser_run.add_argument("--no-track-legend", dest="no_track_legend", action="store_true", help="Omit the ring key on the circular plot.")
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")

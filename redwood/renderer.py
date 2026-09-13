@@ -13,7 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.colors import to_rgba
 from matplotlib.patches import Polygon, Wedge
 import numpy as np
@@ -36,6 +36,8 @@ FEATURE_COLORS = {
     "tRNA": "#d870a2",
 }
 
+from .numts import CLASS_COLORS  # read-class colors shared with the NUMT module
+
 # IGV-style read marks: mismatched read base, insertion, deletion.
 MARK_COLORS = {"A": "#009900", "C": "#0000ff", "G": "#d17105", "T": "#ff0000", "I": "#800080", "D": "#000000"}
 VARIANT_RING_COLORS = {"mismatch": "#d62728", "deletion": "#000000", "insertion": "#800080", "minor": "#f28e2b"}
@@ -54,11 +56,11 @@ CIGAR_OP_WIDTH = {
 MULTIPASS_RADIUS_FRACTION = 0.40
 
 # Redwood-wood gradient for regular read arcs — dark heartwood at the read's
-# genomic start, through cinnamon, to pale sapwood at its end. The colour
+# genomic start, through cinnamon, to pale sapwood at its end. The color
 # sweep makes read direction visible.
 REDWOOD_GRADIENT = ["#3a1d10", "#9c5a2c", "#d3a878"]
 
-# Tree-anatomy theming: the RNA-seq depth ring is recoloured as bark, and the
+# Tree-anatomy theming: the RNA-seq depth ring is recolored as bark, and the
 # AT-content ring uses a warm YlOrBr colormap — dynamic-range normalized in
 # add_at_track so subtle AT% differences stay readable.
 BARK_COLOR = "#6e4a33"
@@ -79,17 +81,29 @@ def polar_xy(radius: float, angle: float) -> tuple[float, float]:
     return radius * np.cos(radians), radius * np.sin(radians)
 
 
-def add_arc(ax, start: int, stop: int, length: int, radius: float, width: float, **kwargs) -> None:
+def _add_patch_fast(ax, patch, sink: list | None = None) -> None:
+    """Add a patch without the per-patch data-limit update of ``Axes.add_patch``.
+
+    Redwood fixes the axis limits itself, and ``add_patch`` recomputes the Bezier extrema of every wedge to update the data
+    limits, which dominated render time (a map has ~10^4 read wedges). With ``sink`` the patch is collected for a
+    ``PatchCollection`` instead."""
+    if sink is not None:
+        sink.append(patch)
+    else:
+        ax.add_artist(patch)
+
+
+def add_arc(ax, start: int, stop: int, length: int, radius: float, width: float, sink: list | None = None, **kwargs) -> None:
     if stop <= start:
         return
     if stop - start >= length:
-        ax.add_patch(Wedge((0, 0), radius, 0, 360, width=width, **kwargs))
+        _add_patch_fast(ax, Wedge((0, 0), radius, 0, 360, width=width, **kwargs), sink)
         return
     if stop > length:
-        add_arc(ax, start, length, length, radius, width, **kwargs)
-        add_arc(ax, 0, stop - length, length, radius, width, **kwargs)
+        add_arc(ax, start, length, length, radius, width, sink=sink, **kwargs)
+        add_arc(ax, 0, stop - length, length, radius, width, sink=sink, **kwargs)
         return
-    ax.add_patch(Wedge((0, 0), radius, theta(stop, length), theta(start, length), width=width, **kwargs))
+    _add_patch_fast(ax, Wedge((0, 0), radius, theta(stop, length), theta(start, length), width=width, **kwargs), sink)
 
 
 def add_directional_feature(
@@ -135,12 +149,12 @@ def _cigar_width_profile(
     cigar: list[tuple[int, int]], min_indel: int, base_lw: float
 ) -> np.ndarray:
     """Per-reference-base line widths for a multi-pass spiral: ``base_lw`` for
-    matches, thin for deletions, fat for insertions (centred, back-offset by
+    matches, thin for deletions, fat for insertions (centered, back-offset by
     half their length). Indels shorter than ``min_indel`` bp keep the match
     width. Insertions are overlaid last so a following match cannot clobber
     them."""
     thin = base_lw * 0.34
-    fat = base_lw * 1.75
+    fat = base_lw * 1.5
     span = sum(ln for op, ln in cigar if op in (0, 2, 3, 7, 8)) or 1
     widths = np.full(span, base_lw, dtype=float)
     insertions = []
@@ -173,7 +187,7 @@ def add_spiral_read(
     color: str,
     cigar: list[tuple[int, int]] | None = None,
     min_indel: int = 10,
-    base_linewidth: float = 0.9,
+    base_linewidth: float | None = None,
     points_per_turn: int = 540,
     marks: list[tuple[int, str]] | None = None,
     mark_filter: set[int] | None = None,
@@ -186,8 +200,12 @@ def add_spiral_read(
     then ramps diagonally down over the final ``wrap_ramp`` fraction, so the
     step into the next rung is visible. When a CIGAR is supplied the spiral's
     line width varies along its length — fat at insertions, thin at deletions —
-    so multi-pass reads carry the same indel detail as the regular reads.
+    so multi-pass reads carry the same indel detail as the regular reads. ``base_linewidth`` defaults to 60 % of the
+    rung spacing in points (capped at 0.9 pt), so spirals stay distinct lines at any figure size.
     """
+    if base_linewidth is None:
+        # never wider than ~60 % of the rung spacing, so neighboring turns and reads stay separable at any figure size
+        base_linewidth = max(0.25, min(0.9, 0.6 * rung_width / units_per_point(ax)))
     n_steps = max(2, int(points_per_turn * passes) + 1)
     a0 = theta(start_pos, length)
     xs, ys = [], []
@@ -281,9 +299,25 @@ def add_read_marks(
     return drawn
 
 
+def add_numt_ring(ax, loci: list[dict], length: int, r_in: float, r_out: float, lanes: int = 3) -> int:
+    """Mitogenome intervals that exist as NUMTs in the nuclear genome, one arc per locus interval, colored by identity
+    (viridis, 75-100 %), stacked into ``lanes`` lanes (largest loci outermost)."""
+    from .numts import _identity_color
+    lane_h = (r_out - r_in) / lanes; drawn = 0
+    ends = [-1] * lanes
+    for r in sorted(loci, key=lambda x: -x["mito_bp"]):
+        for s, e in r["intervals"]:
+            lane = next((i for i in range(lanes) if ends[i] <= s), None)
+            if lane is None: lane = min(range(lanes), key=lambda i: ends[i])
+            ends[lane] = e
+            add_arc(ax, s, e, length, r_out - lane * lane_h, lane_h * 0.85, color=_identity_color(r["identity"]), alpha=0.95, linewidth=0, zorder=2)
+            drawn += 1
+    return drawn
+
+
 def add_variant_ring(ax, rows: list[dict[str, object]], length: int, r_in: float = 0.958, r_out: float = 0.998) -> int:
     """Per-column disagreement ring: one bar per flagged column, height = minor-allele fraction
-    (full height for columns whose majority differs from the reference), coloured by event."""
+    (full height for columns whose majority differs from the reference), colored by event."""
     half = max(2.0, length / 1400.0)
     drawn = 0
     ax.add_patch(plt.Circle((0, 0), r_in, fill=False, lw=0.3, color="#c8ced8", zorder=1))
@@ -318,7 +352,7 @@ def load_variant_table(path: Path) -> list[dict[str, object]]:
 
 
 def _gradient_color(stops: list[str], frac: float):
-    """Interpolate a multi-stop colour gradient at ``frac`` in [0, 1]."""
+    """Interpolate a multi-stop color gradient at ``frac`` in [0, 1]."""
     frac = min(1.0, max(0.0, frac))
     if len(stops) == 1:
         return stops[0]
@@ -340,20 +374,21 @@ def add_cigar_read(
     gradient: list[str] = REDWOOD_GRADIENT,
     alpha: float = 1.0,
 ) -> None:
-    """Draw one regular read as a CIGAR-aware, gradient-coloured arc.
+    """Draw one regular read as a CIGAR-aware, gradient-colored arc.
 
     Each CIGAR operation is an arc segment whose radial width encodes the
     operation — matches at the nominal width, deletions/skips thin (a
     near-gap), insertions a fat bulge back-offset by half their length — and
-    whose colour follows ``gradient`` from the read's genomic start to its end,
+    whose color follows ``gradient`` from the read's genomic start to its end,
     so read direction is visible. Match ops are subdivided so the gradient
     stays smooth. Insertions/deletions shorter than ``min_indel`` bp are drawn
     as plain match, suppressing small HiFi indel noise. The read is clipped at
     one full circle so its 3' end never overlaps its 5' end.
     """
     centerline = radius - READ_ARC_WIDTH / 2
+    sink: list = []                 # all wedges of this read become one PatchCollection (same look, far fewer artists)
     total = max(1, min(sum(n for op, n in cigar if op in (0, 2, 3, 7, 8)), length))
-    chunk = max(1, length // 360)   # op subdivision for a smooth colour gradient
+    chunk = max(1, length // 360)   # op subdivision for a smooth color gradient
     ref = start
     drawn = 0  # reference bp drawn so far — clip the read at one full circle
     for op, oplen in cigar:
@@ -362,7 +397,7 @@ def add_cigar_read(
                 w = CIGAR_OP_WIDTH[1]
                 s = (ref - oplen // 2) % length
                 color = _gradient_color(gradient, drawn / total)
-                add_arc(ax, s, s + oplen, length, centerline + w / 2, w,
+                add_arc(ax, s, s + oplen, length, centerline + w / 2, w, sink=sink,
                         color=color, alpha=alpha, linewidth=0)
             continue
         if op in (4, 5, 6):  # S / H / P — no span on the circle
@@ -384,11 +419,13 @@ def add_cigar_read(
             # sub-arc fully covers the anti-aliased seam between them — without
             # this, the abutting Wedge patches leave faint radial hairlines.
             draw_len = sub if pos + sub >= seg else sub * 2
-            add_arc(ax, s, s + draw_len, length, centerline + w / 2, w,
+            add_arc(ax, s, s + draw_len, length, centerline + w / 2, w, sink=sink,
                     color=color, alpha=alpha, linewidth=0)
             pos += sub
         ref += oplen
         drawn += seg
+    if sink:
+        ax.add_collection(PatchCollection(sink, match_original=True), autolim=False)
 
 
 def read_reference(path: Path) -> str:
@@ -420,17 +457,15 @@ def sequence_length_from_bam(path: Path) -> int:
 
 
 def at_profile(reference: str, window: int = 201) -> list[float]:
+    """AT fraction in a window centered on every position; windows wrap around the origin of the circular molecule."""
+    n = len(reference)
+    if n == 0:
+        return []
     half = window // 2
-    doubled = reference + reference
-    profile = []
-    offset = len(reference)
-    for i in range(len(reference)):
-        segment = doubled[offset + i - half : offset + i + half + 1]
-        if not segment:
-            profile.append(0.0)
-        else:
-            profile.append((segment.count("A") + segment.count("T")) / len(segment))
-    return profile
+    at = np.fromiter((c in "ATat" for c in reference), dtype=float, count=n)
+    padded = np.take(at, np.arange(-half, n + half), mode="wrap")
+    csum = np.concatenate([[0.0], np.cumsum(padded)])
+    return list((csum[window:window + n] - csum[:n]) / window)
 
 
 def strand_depth_profiles(bam_path: Path | None, length: int) -> tuple[np.ndarray, np.ndarray]:
@@ -541,6 +576,7 @@ def add_rnaseq_depth_track(
 
 _NAME_SUFFIX = re.compile(r"\s+(CDS|gene|mRNA|exon|rRNA|tRNA)\b.*$", re.IGNORECASE)
 _NAME_PARTIAL = re.compile(r"\s*\(?\s*(?:[35]'\s*)?partial\b.*$", re.IGNORECASE)
+_NAME_PAREN = re.compile(r"\s*\([^()]*\)\s*$")
 _AA3 = {
     "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G",
     "His": "H", "Ile": "I", "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S",
@@ -549,8 +585,10 @@ _AA3 = {
 
 
 def clean_feature_name(name: str) -> str:
-    """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...)."""
+    """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...) and a trailing
+    parenthesized comment, so a descriptive Name never becomes a label that runs off the page."""
     name = name.strip()
+    name = _NAME_PAREN.sub("", name)          # "ND4L-2 gene (second copy of the duplication)" -> "ND4L-2 gene"
     name = _NAME_PARTIAL.sub("", name)
     name = _NAME_SUFFIX.sub("", name)
     return name.strip() or "feature"
@@ -648,10 +686,11 @@ def assign_annotation_lanes(features: list[dict[str, object]]) -> list[dict[str,
 
 
 def units_per_point(ax) -> float:
-    """Data units per typographic point along the x axis (the plot is square with equal aspect)."""
+    """Data units per typographic point along the x axis (equal aspect, so the same for y)."""
     fig = ax.figure
     width_in = fig.get_size_inches()[0] * ax.get_position().width
-    return (2 * PLOT_LIMIT) / (width_in * 72.0)
+    x0, x1 = ax.get_xlim()
+    return abs(x1 - x0) / (width_in * 72.0)
 
 
 def label_width_units(ax, text: str, fontsize: float) -> float:
@@ -674,7 +713,7 @@ def add_feature_label(
 ) -> None:
     """Label a feature. The name is written along the arc when it fits (shrinking the font down to
     ``min_fontsize`` first); otherwise, when ``outer_radius`` is given, it is written radially just
-    outside the outer track with a short leader in the feature colour, so short genes and tRNAs
+    outside the outer track with a short leader in the feature color, so short genes and tRNAs
     keep their labels instead of being dropped. ``prefer_outside`` skips the along-arc attempt
     (used for tRNAs, whose arcs are too thin to carry readable text)."""
     start = int(feature["start"])
@@ -684,8 +723,9 @@ def add_feature_label(
     if not name or span <= 0:
         return
     angle = theta(int(start + (span / 2)), length)
+    upright = angle % 360                  # theta() runs from 90 down to -270; compare on 0-360
     rotation = angle - 90
-    if 90 < angle < 270:
+    if 180 < upright < 360:                # along-arc text on the bottom half would read upside down
         rotation += 180
     arc_units = (span / length) * 2 * np.pi * radius
     size = fontsize if not (prefer_outside and outer_radius is not None) else min_fontsize - 1
@@ -699,25 +739,44 @@ def add_feature_label(
     if outer_radius is None:
         return
     # Radial label outside the outer track, reading outward; leader from the track edge.
-    # Neighbouring labels (e.g. tRNA clusters) are staggered outward so they do not overprint.
+    # Neighboring labels (e.g. tRNA clusters) are staggered outward so they do not overprint.
     size = max(min_fontsize, fontsize - 0.8)
     placed = getattr(ax, "_redwood_outer_labels", None)
     if placed is None:
         placed = []
         ax._redwood_outer_labels = placed
-    min_sep = size * units_per_point(ax) * 1.3 / max(outer_radius, 1e-6) * (180 / np.pi)  # degrees
-    tier = 0
-    while any(abs(((angle - a + 180) % 360) - 180) < min_sep and t == tier for a, t in placed):
-        tier += 1
-    placed.append((angle, tier))
-    step = label_width_units(ax, name, size) + 0.012
-    base = outer_radius + tier * step
+    upp = units_per_point(ax)
+    min_sep = size * upp * 1.3 / max(outer_radius, 1e-6) * (180 / np.pi)  # degrees
+    width = label_width_units(ax, name, size)
+    step = width + 0.012
+    label_angle = angle
+    shift_dir = 0.0                         # set once the label has been rotated off a position label
+    for _ in range(12):
+        tier = 0
+        while any(abs(((label_angle - a + 180) % 360) - 180) < min_sep and t == tier for a, t in placed):
+            tier += 1
+        if tier and shift_dir:
+            # already rotated off a position label and another label sits there: spread sideways instead of stacking
+            # outward along the same ray (which would read as one word, e.g. "WR")
+            label_angle += shift_dir * min_sep
+            continue
+        base = outer_radius + tier * step
+        # a position label ("5,000 bp") in the way: rotate this label just clear of it; the leader bends back to the feature
+        clash = _position_label_conflict(ax, label_angle, base + 0.008, base + 0.008 + width, 0.6 * size * upp)
+        if clash is None:
+            break
+        pa, need, d = clash
+        shift_dir = shift_dir or (1.0 if d >= 0 else -1.0)
+        label_angle = pa + (need + 0.3) * shift_dir
+    placed.append((label_angle, tier))
     lead0 = polar_xy(outer_radius - 0.010, angle)
-    lead1 = polar_xy(base + 0.004, angle)
+    lead1 = polar_xy(base + 0.004, label_angle)
     ax.plot([lead0[0], lead1[0]], [lead0[1], lead1[1]], color=str(feature.get("color", color)), lw=0.6, alpha=0.9, zorder=5)
-    x, y = polar_xy(base + 0.008, angle)
-    radial = angle if angle <= 90 or angle > 270 else angle + 180
-    ha = "left" if angle <= 90 or angle > 270 else "right"
+    x, y = polar_xy(base + 0.008, label_angle)
+    upright = label_angle % 360
+    left_half = 90 < upright < 270         # radial text on the left half would read upside down
+    radial = label_angle + 180 if left_half else label_angle
+    ha = "right" if left_half else "left"
     ax.text(x, y, name, ha=ha, va="center", color=outer_color or color, fontsize=size,
             rotation=radial, rotation_mode="anchor", fontweight="bold", zorder=5)
 
@@ -747,6 +806,20 @@ def choose_position_label_step(length: int, max_degrees: float = 60.0) -> int:
     return max(candidates) if candidates else nice_steps[0]
 
 
+def _position_label_conflict(ax, angle: float, r0: float, r1: float, half_height: float):
+    """A recorded position label that a radial label spanning radii [r0, r1] at ``angle`` would overlap, as
+    (label angle, required angular separation in degrees, signed offset), or None."""
+    for pa, half_deg, pr0, pr1 in getattr(ax, "_redwood_position_labels", []):
+        if r1 < pr0 or r0 > pr1:
+            continue
+        r_mid = max(1e-6, (max(r0, pr0) + min(r1, pr1)) / 2)
+        need = half_deg + float(np.degrees(half_height / r_mid)) + 0.8
+        d = ((angle - pa + 180) % 360) - 180
+        if abs(d) < need:
+            return pa, need, d
+    return None
+
+
 def add_position_labels(ax, length: int, color: str) -> None:
     tick_step = 1000 if length <= 30000 else 2500
     label_step = choose_position_label_step(length)
@@ -762,7 +835,7 @@ def add_position_labels(ax, length: int, color: str) -> None:
         if major:
             x, y = polar_xy(1.238, angle)
             rotation = angle - 90
-            if 90 < angle < 270:
+            if 180 < angle % 360 < 360:
                 rotation += 180
             ax.text(
                 x,
@@ -776,6 +849,12 @@ def add_position_labels(ax, length: int, color: str) -> None:
                 rotation_mode="anchor",
                 alpha=0.86,
             )
+            # remember the label's footprint (angular half-width at its radius, radial band) so outer feature labels avoid it
+            upp = units_per_point(ax)
+            text_w = len(f"{bp:,} bp") * 5.2 * 0.58 * upp
+            text_h = 5.2 * upp
+            footprint = (angle, float(np.degrees((text_w / 2 + 0.004) / 1.238)), 1.238 - 0.6 * text_h, 1.238 + 0.6 * text_h)
+            ax.__dict__.setdefault("_redwood_position_labels", []).append(footprint)
 
 
 def read_spans(path: Path | None, true_length: int, max_reads: int) -> list[tuple[int, int]]:
@@ -807,6 +886,188 @@ def infer_length(reference: str | Path | None, gff: str | Path | None, main_bam:
     raise ValueError("plotting requires --mito-fasta, --gff with circular region, or --main-bam")
 
 
+# Ring key geometry, in data units of the map (ring radii run to ~1.18, labels to ~1.27, axes to +/-PLOT_LIMIT).
+KEY_RADIUS = 0.40          # outer radius of the 90-degree cut-out (standalone maps)
+KEY_RADIUS_MAX = 0.50      # on small maps the key may grow up to this radius, so its rows keep legible spacing
+KEY_PITCH_PT = 5.0         # target row pitch in points when the key grows
+KEY_INNER = 0.08           # inner radius (the innermost band starts here)
+KEY_CLEARANCE = 1.30       # nearest point of the cut-out to the map center (clear of rings, ticks and outer labels)
+KEY_LABEL_CHARS = 17       # longest key label, used to reserve room for the label column
+KEY_FONT_RANGE = (3.6, 5.0)
+
+
+def _key_center(radius: float = KEY_RADIUS) -> tuple[float, float]:
+    """Center of the cut-out: at the bottom edge of the plot, as far left as the clearance from the map allows."""
+    cy = -PLOT_LIMIT + 0.03
+    cx = float(np.sqrt(max(0.0, (KEY_CLEARANCE + radius) ** 2 - cy ** 2)))
+    return cx, cy
+
+
+def _key_radius(n_layers: int, upp: float, pitch_pt: float = KEY_PITCH_PT) -> float:
+    """Outer radius of the key: KEY_RADIUS, grown towards KEY_RADIUS_MAX when the map is small (large data units per point)
+    so each row gets about KEY_PITCH_PT points."""
+    return float(min(KEY_RADIUS_MAX, max(KEY_RADIUS, KEY_INNER + max(1, n_layers) * pitch_pt * upp)))
+
+
+def _units_per_point_for(ax, xspan: float, yspan: float) -> float:
+    """Data units per point for an equal-aspect axes showing ``xspan`` x ``yspan`` inside its allocated box
+    (the original, layout-allocated position, not the aspect-adjusted one)."""
+    fig = ax.figure
+    pos = ax.get_position(original=True)
+    w_in = fig.get_size_inches()[0] * pos.width
+    h_in = fig.get_size_inches()[1] * pos.height
+    return max(xspan / (w_in * 72.0), yspan / (h_in * 72.0))
+
+
+def _key_font(pitch: float, upp: float, rng: tuple[float, float] = KEY_FONT_RANGE) -> float:
+    return float(min(rng[1], max(rng[0], 0.8 * pitch / upp)))
+
+
+def _key_font_range(ax) -> tuple[float, float]:
+    """Font range of the ring key: KEY_FONT_RANGE, or the range set by draw_circular_plot(text_pt=...)."""
+    return getattr(ax, "_redwood_key_font_range", KEY_FONT_RANGE)
+
+
+def track_legend_width(ax, n_layers: int = 1) -> float:
+    """Extra x range (data units, right of +PLOT_LIMIT) that the key's label column needs on this axes.
+
+    ``n_layers`` is an upper bound on the layers the key will list: fewer layers mean a larger pitch and so a larger font,
+    so the reservation is made for the font of ``n_layers`` and :func:`add_track_legend` never exceeds it (stored on the
+    axes). The default of one layer reserves room for the largest font."""
+    rng = _key_font_range(ax); pitch_pt = max(KEY_PITCH_PT, 1.1 * rng[0])
+    width, font, radius = 0.3, rng[1], KEY_RADIUS
+    for _ in range(8):                                   # the scale depends on the width; converges in a few steps
+        upp = _units_per_point_for(ax, 2 * PLOT_LIMIT + width, 2 * PLOT_LIMIT)
+        radius = _key_radius(n_layers, upp, pitch_pt)
+        cx, _ = _key_center(radius)
+        font = _key_font((radius - KEY_INNER) / max(1, n_layers), upp, rng)
+        right = cx + 0.03 + KEY_LABEL_CHARS * font * 0.56 * upp + 0.02
+        width = max(0.0, right - PLOT_LIMIT)
+    ax._redwood_key_font = font
+    ax._redwood_key_radius = radius
+    return width
+
+
+def track_legend_layers(*, has_rnaseq: bool, has_at: bool, has_variants: bool, has_numts: bool, has_multipass: bool,
+                        has_regular: bool, has_annotation: bool = False, has_genes: bool | None = None,
+                        has_trna: bool | None = None) -> list[tuple[str, str]]:
+    """Layers present on a circular plot, innermost first, as ``(key, label)``. ``has_genes`` (CDS/rRNA) and ``has_trna``
+    default to ``has_annotation`` when not given."""
+    has_genes = has_annotation if has_genes is None else has_genes
+    has_trna = has_annotation if has_trna is None else has_trna
+    layers = []
+    if has_regular: layers.append(("regular", "single-pass reads"))
+    if has_multipass: layers.append(("multipass", "multi-pass reads"))
+    if has_numts: layers.append(("numts", "NUMT loci"))
+    if has_at: layers.append(("at", "AT content"))
+    if has_variants: layers.append(("variants", "variant columns"))
+    if has_genes:
+        layers.append(("genes", "CDS / rRNA genes"))
+    if has_trna:
+        layers.append(("trna", "tRNA genes"))
+    if has_rnaseq: layers.append(("rnaseq", "RNA-seq depth"))
+    return layers
+
+
+def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, has_marks: bool = True) -> int:
+    """Draw a 90-degree cut-out of the ring stack as a key in the bottom-right corner of the map.
+
+    The cut-out opens towards the map; its straight vertical edge faces a column of labels, so every band ends next to
+    its own name. Bands are schematic, in the real radial order with the real colors: wood-colored single-pass reads with
+    indel width changes and mismatch dots, a multi-pass read as a spiral stepping down one rung per turn, viridis NUMT
+    arcs, the AT color ramp, variant-ring bars, gene blocks with the strand arrow, tRNA blocks and the RNA-seq depth
+    profile. Text is sized to the band pitch (3.6-5 pt). Returns the number of layers drawn."""
+    if not layers:
+        return 0
+    from .multipass import MULTIPASS_COLORS
+    fg = "#eef4fb" if dark else "#111827"
+    tick = "#9aa8b7" if dark else "#667085"
+    x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
+    upp = _units_per_point_for(ax, abs(x1 - x0), abs(y1 - y0))
+    n = len(layers)
+    rng = _key_font_range(ax)
+    radius = getattr(ax, "_redwood_key_radius", None) or _key_radius(n, upp, max(KEY_PITCH_PT, 1.1 * rng[0]))
+    center = _key_center(radius)
+    cx, cy = center
+    pitch = (radius - KEY_INNER) / n
+    band = 0.78 * pitch
+    fontsize = min(_key_font(pitch, upp, rng), getattr(ax, "_redwood_key_font", rng[1]))
+    t1, t2 = 91.0, 179.0                      # angular extent of the cut-out (degrees, counter-clockwise from +x)
+    rng = np.random.default_rng(7)
+    smooth = np.convolve(rng.random(160), np.ones(9) / 9, mode="same")
+
+    def wedge(r_out, r_in, a1, a2, **kw):
+        _add_patch_fast(ax, Wedge(center, r_out, a1, a2, width=r_out - r_in, linewidth=0, zorder=5, **kw))
+
+    def arc_xy(r, a1, a2, k=40):
+        a = np.radians(np.linspace(a1, a2, k))
+        return cx + r * np.cos(a), cy + r * np.sin(a)
+
+    def line_width(spacing):                  # never wider than ~55 % of the space between neighboring lines
+        return float(max(0.25, min(0.9, 0.55 * spacing / upp)))
+
+    for i, (key, label) in enumerate(layers):
+        r_in = KEY_INNER + i * pitch; r_out = r_in + band; mid = (r_in + r_out) / 2
+        if key == "regular":
+            spacing = band / 3; lw = line_width(spacing)
+            radii = [r_out - spacing * (0.5 + j) for j in range(3)]
+            for r, (a1, a2), col in zip(radii, ((93, 138), (144, 177), (100, 170)), REDWOOD_GRADIENT):
+                x, y = arc_xy(r, a1, a2); ax.plot(x, y, color=col, lw=lw, solid_capstyle="butt", zorder=5)
+            x, y = arc_xy(radii[0], 110, 117); ax.plot(x, y, color=REDWOOD_GRADIENT[0], lw=lw * 1.5, solid_capstyle="butt", zorder=6)  # insertion
+            x, y = arc_xy(radii[0], 124, 130); ax.plot(x, y, color="white", lw=lw * 0.6, solid_capstyle="butt", zorder=6)              # deletion
+            if has_marks:
+                for r, a, kind in ((radii[0], 100, "T"), (radii[1], 156, "A"), (radii[2], 140, "I")):
+                    x, y = arc_xy(r, a, a, k=1); ax.plot(x, y, marker="o", ms=lw * 1.2, mew=0, color=MARK_COLORS[kind], zorder=7)
+        elif key == "multipass":
+            # one read spiraling inward: flat along each turn, stepping down one rung over a short ramp. Clockwise travel
+            # (the map's direction) runs from the left edge of the cut-out (179 deg) to the top edge (91 deg).
+            spacing = band / 3; lw = line_width(spacing)
+            levels = [r_out - spacing * (0.5 + j) for j in range(3)]
+            ramp_hi, ramp_lo = 150.0, 124.0
+            for j in range(3):
+                a = np.linspace(t2 - 1, ramp_hi, 20); r = np.full_like(a, levels[j])
+                if j < 2:
+                    a = np.concatenate([a, np.linspace(ramp_hi, ramp_lo, 14)[1:], np.linspace(ramp_lo, t1 + 1, 20)[1:]])
+                    r = np.concatenate([r, np.linspace(levels[j], levels[j + 1], 14)[1:], np.full(19, levels[j + 1])])
+                ax.plot(cx + r * np.cos(np.radians(a)), cy + r * np.sin(np.radians(a)), color=MULTIPASS_COLORS[0], lw=lw,
+                        solid_capstyle="round", solid_joinstyle="round", zorder=5)
+        elif key == "numts":
+            from .numts import _identity_color
+            lane = band / 2
+            for (a1, a2, ident, l) in ((94, 118, 0.99, 0), (122, 136, 0.86, 0), (140, 176, 0.93, 0), (100, 150, 0.79, 1)):
+                wedge(r_out - l * lane, r_out - (l + 0.85) * lane, a1, a2, facecolor=_identity_color(ident), alpha=0.95)
+        elif key == "at":
+            k = 44; edges = np.linspace(t1, t2, k + 1)
+            for j in range(k):
+                v = AT_RANGE[0] + (AT_RANGE[1] - AT_RANGE[0]) * smooth[j]
+                wedge(r_out, r_in, edges[j], edges[j + 1] + 0.4, facecolor=AT_COLORMAP(v), alpha=0.92)
+        elif key == "variants":
+            x, y = arc_xy(r_in, t1, t2); ax.plot(x, y, color="#c8ced8", lw=0.3, zorder=5)
+            bars = ((96, "mismatch", 1.0), (106, "minor", 0.3), (116, "insertion", 0.5), (126, "minor", 0.2), (136, "deletion", 1.0),
+                    (146, "minor", 0.45), (156, "insertion", 0.7), (166, "mismatch", 1.0), (175, "minor", 0.6))
+            for a, kind, frac in bars:
+                wedge(r_in + band * max(0.15, frac), r_in, a - 1.2, a + 1.2, facecolor=VARIANT_RING_COLORS[kind], alpha=0.95)
+        elif key == "genes":
+            wedge(r_out, r_in, 136, 177, facecolor=FEATURE_COLORS["CDS"], alpha=0.95)
+            a = np.radians(136.0); tip = np.radians(129.0)                 # arrowhead: genes point clockwise, like the map
+            ax.add_patch(Polygon([(cx + r_out * np.cos(a), cy + r_out * np.sin(a)), (cx + mid * np.cos(tip), cy + mid * np.sin(tip)),
+                                  (cx + r_in * np.cos(a), cy + r_in * np.sin(a))], closed=True, facecolor=FEATURE_COLORS["CDS"],
+                                 linewidth=0, zorder=5))
+            wedge(r_out, r_in, 94, 122, facecolor=FEATURE_COLORS["rRNA"], alpha=0.95)
+        elif key == "trna":
+            for a1, a2 in ((98, 104), (119, 125), (142, 148), (164, 170)):
+                wedge(r_out, r_in, a1, a2, facecolor=FEATURE_COLORS["tRNA"], alpha=0.95)
+        elif key == "rnaseq":
+            k = 50; edges = np.linspace(t1, t2, k + 1)
+            for j in range(k):
+                h = band * (0.25 + 0.75 * smooth[j + 60])
+                wedge(r_in + h, r_in, edges[j], edges[j + 1] + 0.4, facecolor=BARK_COLOR if (j // 7) % 2 == 0 else BARK_COLOR_ALT, alpha=0.82)
+        ax.text(cx + 0.03, cy + mid, label, ha="left", va="center", fontsize=fontsize, color=fg, zorder=6)
+    ax.text(cx + 0.03, cy + radius + 0.035, "ring key", ha="left", va="bottom", fontsize=fontsize, color=tick,
+            fontweight="bold", zorder=6)
+    return n
+
+
 def draw_circular_plot(
     ax,
     *,
@@ -831,8 +1092,15 @@ def draw_circular_plot(
     variant_ring: bool = True,
     variant_table: Path | None = None,
     min_minor_frac: float = 0.05,
+    numt_loci: Path | None = None,
+    read_classes: Path | None = None,
+    track_legend: bool = True,
+    text_pt: tuple[float, float] | None = None,
 ) -> None:
+    """``text_pt=(min, max)`` keeps every label of the map within that size range in points (e.g. (5, 7) for Nature
+    journals); labels that do not fit at the minimum go outside the ring instead of shrinking."""
     fg = "#eef4fb" if dark else "#111827"
+    lo, hi = text_pt if text_pt else (0.0, 99.0)
     rna_forward = "#b6906a" if dark else BARK_COLOR
     rna_reverse = "#caa078" if dark else BARK_COLOR_ALT
     tick_color = "#9aa8b7" if dark else "#667085"
@@ -840,10 +1108,19 @@ def draw_circular_plot(
     rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
-    ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
+    if text_pt:
+        ax._redwood_key_font_range = (max(KEY_FONT_RANGE[0], lo), min(max(KEY_FONT_RANGE[1], lo), hi))
+    if track_legend:
+        # upper bound on the layers the key can list, so the reserved label room is never exceeded
+        key_layers = ((1 if np.max(rnaseq_forward + rnaseq_reverse, initial=0) > 0 else 0) + (2 if gff else 0) + (1 if reference else 0)
+                      + (1 if variant_ring and reference and main_bam else 0) + (1 if numt_loci else 0) + (2 if main_bam else 0))
+        ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT + track_legend_width(ax, max(1, key_layers)))
+    else:
+        ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_xticks([])
     ax.set_yticks([])
+    layer_flags = {"has_variants": False, "has_multipass": False, "has_regular": False}
 
     add_position_labels(ax, length, tick_color)
     add_rnaseq_depth_track(
@@ -860,7 +1137,8 @@ def draw_circular_plot(
 
     has_rnaseq = rnaseq_forward is not None and np.max(rnaseq_forward + rnaseq_reverse) > 0
     outer_radius = 1.178 if has_rnaseq else 1.118
-    for feature in assign_annotation_lanes(parse_gff(gff)):
+    features = assign_annotation_lanes(parse_gff(gff))
+    for feature in features:
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")
         feature["color"] = color
         if feature["type"] == "tRNA":
@@ -878,7 +1156,7 @@ def draw_circular_plot(
             if trna_labels != "none":
                 text = trna_short_label(str(feature["name"])) if trna_labels == "letter" else str(feature["name"])
                 add_feature_label(ax, feature, length, 1.094, label_color, outer_radius=outer_radius,
-                                  outer_color=fg, label_text=text, fontsize=4.6, min_fontsize=3.8,
+                                  outer_color=fg, label_text=text, fontsize=min(max(4.6, lo), hi), min_fontsize=min(max(3.8, lo), hi),
                                   prefer_outside=True)
             continue
         radius = 1.030 + (float(feature.get("lane", 0)) * 0.048)
@@ -895,7 +1173,8 @@ def draw_circular_plot(
         )
         if feature_labels:
             add_feature_label(ax, feature, length, radius - (width / 2), label_color,
-                              outer_radius=outer_radius, outer_color=fg)
+                              outer_radius=outer_radius, outer_color=fg, fontsize=min(max(5.0, lo), hi),
+                              min_fontsize=min(max(3.6, lo), hi))
 
     if reference:
         add_at_track(ax, reference, 0.918, 0.954)
@@ -905,6 +1184,18 @@ def draw_circular_plot(
     # CIGAR indel detail is drawn on both — regular reads as arc-width changes
     # (add_cigar_read), spirals as line-width changes (add_spiral_read).
     r_top, r_min, rung_w = 0.894, 0.40, 0.0087
+    numt_rows = []
+    if numt_loci and Path(str(numt_loci)).exists():
+        from .numts import read_loci
+
+        numt_rows = read_loci(Path(str(numt_loci)))
+        add_numt_ring(ax, numt_rows, length, 0.866, 0.908)
+        r_top = 0.856
+    class_of: dict[str, str] = {}
+    if read_classes and Path(str(read_classes)).exists():
+        for line in Path(str(read_classes)).read_text().splitlines()[1:]:
+            f = line.split("\t")
+            if len(f) >= 2: class_of[f[0]] = f[1]
     if main_bam is not None and Path(str(main_bam)).exists():
         # Column-level disagreement of the read population with the reference (mismatch / indel table):
         # drives the variant ring and, in "shared" mode, which per-read mismatches are marked.
@@ -923,6 +1214,7 @@ def draw_circular_plot(
                            if any(tag in str(r.get("events", "")).split(",") for tag in ("mismatch", "minor"))}
         if variant_ring and reference and variant_rows:
             add_variant_ring(ax, variant_rows, length)
+            layer_flags["has_variants"] = True
         want_marks = read_mismatches != "none" and reference is not None
         multipass_reads, regular_reads = classify_circular_reads(
             Path(str(main_bam)),
@@ -955,7 +1247,7 @@ def draw_circular_plot(
                 r_top - rung * rung_w,
                 rung_w,
                 wrap_ramp,
-                MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
+                CLASS_COLORS[class_of[mp.name]] if class_of and class_of.get(getattr(mp, "name", "")) in CLASS_COLORS and class_of.get(mp.name) not in ("mito_only", "mito_multisegment", "mito+NUMT_homology") else MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
                 cigar=mp.cigar,
                 min_indel=min_indel,
                 marks=mp.marks if want_marks else None,
@@ -964,14 +1256,16 @@ def draw_circular_plot(
             rung += n_rungs
         if selected:
             rung += 1  # blank rung separating spirals from regular reads
+            layer_flags["has_multipass"] = True
         placed, _ = pack_circular_reads(regular_reads, length, pad=length * 0.004)
         for read, lane in placed:
             radius = r_top - (rung + lane) * rung_w
             if radius <= r_min:
                 continue
+            cls = class_of.get(getattr(read, "name", ""), None) if class_of else None
             if read.cigar:
                 add_cigar_read(ax, read.start, read.cigar, length, radius,
-                               min_indel)
+                               min_indel, gradient=[CLASS_COLORS[cls]] if cls in CLASS_COLORS and cls not in ("mito_only", "mito_multisegment", "mito+NUMT_homology") else REDWOOD_GRADIENT)
             else:
                 add_arc(
                     ax, read.start, read.start + read.span, length, radius,
@@ -980,18 +1274,48 @@ def draw_circular_plot(
                 )
             if want_marks and read.marks:
                 add_read_marks(ax, read.start, read.marks, length, radius, mark_filter=mark_filter)
-        if want_marks:
-            legend = [("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del")]
-            x = -0.24
-            for kind, text in legend:
-                ax.text(x, -0.22, text, ha="left", va="center", fontsize=5.2, fontweight="bold",
-                        color=MARK_COLORS[kind], zorder=6)
-                x += 0.08 if len(text) == 1 else 0.11
-            ax.text(-0.24, -0.29, "read mismatches" + (" (shared)" if read_mismatches == "shared" else ""),
-                    ha="left", va="center", fontsize=4.6, color=tick_color, zorder=6)
+            layer_flags["has_regular"] = True
+        ax._redwood_read_counts = {"reads": len(multipass_reads) + len(regular_reads), "multipass_drawn": len(selected),
+                                   "regular_drawn": sum(1 for _read, lane in placed if r_top - (rung + lane) * rung_w > r_min)}
+        upp = units_per_point(ax)
 
-    ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")
-    ax.text(0, -0.085, "bp", ha="center", va="center", color=tick_color, fontsize=7)
+        def opening_at(y):                  # usable width of the central opening at height y
+            return 1.72 * float(np.sqrt(max(r_min ** 2 - y ** 2, 0.0)))
+
+        def centered_row(items, y, size, min_size, bold):
+            gap = 2.2
+            width = lambda fs: sum(len(t) * fs * (0.66 if bold else 0.56) * upp for t, _ in items) + (len(items) - 1) * gap * upp
+            while size > min_size and width(size) > opening_at(y):
+                size -= 0.2
+            x = -width(size) / 2
+            for text, color in items:
+                ax.text(x, y, text, ha="left", va="center", fontsize=size, color=color, zorder=6,
+                        fontweight="bold" if bold else "normal")
+                x += len(text) * size * (0.66 if bold else 0.56) * upp + gap * upp
+
+        if class_of:
+            centered_row([(text, CLASS_COLORS[cls]) for cls, text in (
+                ("mito+nuclear_at_NUMT_locus", "NUMT junction"), ("mito+nuclear_elsewhere", "chimera"),
+                ("nuclear_only_at_NUMT_locus", "nuclear"))], -0.36, max(4.6, lo), max(3.6, lo), False)
+        if want_marks:
+            centered_row([(t, MARK_COLORS[k]) for k, t in (("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del"))],
+                         -0.22, min(max(5.2, lo), hi), max(3.6, lo), True)
+            caption = "read mismatches" + (" (shared)" if read_mismatches == "shared" else "")
+            size = max(4.6, lo)
+            while size > max(3.6, lo) and len(caption) * size * 0.56 * upp > opening_at(-0.29):
+                size -= 0.2
+            if len(caption) * size * 0.56 * upp > opening_at(-0.29):
+                caption = "read mismatches"
+            ax.text(0, -0.29, caption, ha="center", va="center", fontsize=size, color=tick_color, zorder=6)
+
+    if track_legend:
+        layers = track_legend_layers(has_rnaseq=bool(has_rnaseq), has_at=bool(reference),
+                                     has_genes=any(str(f["type"]) != "tRNA" for f in features),
+                                     has_trna=any(str(f["type"]) == "tRNA" for f in features),
+                                     has_numts=bool(numt_rows), **layer_flags)
+        add_track_legend(ax, layers, dark=dark, has_marks=(read_mismatches != "none" and reference is not None))
+    ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=min(9, hi), fontweight="bold")
+    ax.text(0, -0.085, "bp", ha="center", va="center", color=tick_color, fontsize=min(7, hi))
     if title:
         ax.set_title(title, color=fg, fontsize=15, fontweight="bold", pad=10)
     if subtitle:
@@ -1035,12 +1359,18 @@ def plot_file(
     variant_ring: bool = True,
     variant_table: Path | None = None,
     min_minor_frac: float = 0.05,
+    numt_loci: Path | None = None,
+    read_classes: Path | None = None,
+    track_legend: bool = True,
 ) -> None:
     bg = "#0d1117" if dark else "#ffffff"
     edge = "#303946" if dark else "#d8dee8"
     reference = read_reference(reference_fasta) if reference_fasta else None
     length = infer_length(reference_fasta, gff, main_bam)
     fig, ax = plt.subplots(figsize=(5.8, 5.8), dpi=dpi)
+    fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
+    if track_legend:       # widen the figure by the key's label column, keeping the map itself the same size
+        fig.set_size_inches(5.8 * (2 * PLOT_LIMIT + track_legend_width(ax)) / (2 * PLOT_LIMIT), 5.8)
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
     for spine in ax.spines.values():
@@ -1069,6 +1399,9 @@ def plot_file(
         variant_ring=variant_ring,
         variant_table=variant_table,
         min_minor_frac=min_minor_frac,
+        numt_loci=numt_loci,
+        read_classes=read_classes,
+        track_legend=track_legend,
     )
     fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
     print_images(
@@ -1123,6 +1456,9 @@ def run_plot(args) -> None:
         variant_ring=not getattr(args, "no_variant_ring", False),
         variant_table=Path(args.variant_table) if getattr(args, "variant_table", None) else None,
         min_minor_frac=getattr(args, "min_minor_frac", 0.05),
+        numt_loci=Path(args.numt_loci) if getattr(args, "numt_loci", None) else None,
+        read_classes=Path(args.circular_read_classes) if getattr(args, "circular_read_classes", None) else None,
+        track_legend=not getattr(args, "no_track_legend", False),
     )
 
 
@@ -1141,4 +1477,5 @@ def draw_dataset_panel(ax, dataset_dir: Path, label: str, species: str, max_read
         max_reads=max_reads,
         dark=dark,
         rnaseq_style=rnaseq_style,
+        track_legend=False,
     )

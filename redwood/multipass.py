@@ -32,6 +32,7 @@ class MultiPassRead:
     # pysam CIGAR tuples in (op_code, length) order — for indel rendering.
     cigar: list[tuple[int, int]] = field(default_factory=list)
     marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
+    name: str = ""
 
 
 @dataclass
@@ -43,6 +44,7 @@ class RegularRead:
     # draw per-read insertions and deletions.
     cigar: list[tuple[int, int]] = field(default_factory=list)
     marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
+    name: str = ""
 
 
 def read_marks(read, reference_seq: str, true_length: int, min_indel: int = 1) -> list[tuple[int, str]]:
@@ -85,6 +87,11 @@ def read_marks(read, reference_seq: str, true_length: int, min_indel: int = 1) -
         last_ref = rpos
     if del_run >= min_indel and del_start is not None:
         marks.append((del_start - start, "D"))
+    # an insertion as the last aligned operation has no following reference base; take it from the CIGAR so a trailing soft
+    # clip (also unaligned) is not mistaken for one
+    ops = [(op, n) for op, n in (read.cigartuples or []) if op not in (4, 5)]
+    if ops and ops[-1][0] == 1 and ops[-1][1] >= min_indel and last_ref is not None:
+        marks.append((last_ref - start, "I"))
     return marks
 
 
@@ -125,9 +132,9 @@ def classify_circular_reads(
             marks = read_marks(read, reference_seq, true_length, min_indel) if reference_seq else []
             if continuous and span >= min_pass_fraction * true_length:
                 multipass.append(
-                    MultiPassRead(start, span / true_length, span, cigar, marks))
+                    MultiPassRead(start, span / true_length, span, cigar, marks, read.query_name))
             else:
-                regular.append(RegularRead(start, min(span, true_length), cigar, marks))
+                regular.append(RegularRead(start, min(span, true_length), cigar, marks, read.query_name))
     # draw the longest spirals first (outermost)
     multipass.sort(key=lambda r: r.passes, reverse=True)
     return multipass, regular
@@ -155,12 +162,14 @@ def pack_circular_reads(reads, length: int, pad: float = 0.0):
     (outermost) rung where it does not overlap an already-placed read. So the
     longest unplaced read opens each new rung — outer rungs carry the longest
     reads and shorter reads backfill the gaps — rather than producing a
-    start-coordinate cascade. Returns ``(placed, n_rungs)`` where ``placed`` is
-    a list of ``(RegularRead, rung_index)``.
+    start-coordinate cascade. Reads of equal span are ordered by start position,
+    so a set of full-length reads (each on its own rung) forms one clean cascade
+    around the circle. Returns ``(placed, n_rungs)`` where ``placed`` is a list
+    of ``(RegularRead, rung_index)``.
     """
     rungs: list[list] = []          # rungs[i] = list of placed arc-interval sets
     placed: list[tuple] = []
-    for rd in sorted(reads, key=lambda r: -r.span):
+    for rd in sorted(reads, key=lambda r: (-r.span, r.start)):
         ivals = _arc_intervals(rd.start - pad, rd.span + 2 * pad, length)
         for ri, occupied in enumerate(rungs):
             if not any(_intervals_overlap(ivals, o) for o in occupied):
