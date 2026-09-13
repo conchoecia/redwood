@@ -223,10 +223,12 @@ def plot_journal_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: di
                         page=None, figure_width=None, legend_columns: int | None = None, panel_labels: str | None = None,
                         panel_label_pt: float | None = None, text_pt=None, label: str = "", title: str = "", species: str = "",
                         caption: str | None = None, caption_append: str = "", fields: dict | None = None, legend: bool = True,
-                        dpi: int = 300, fileforms=("pdf", "png"), keep_figure: bool = False, **circular_kwargs) -> dict:
+                        figure_margin=0.0, dpi: int = 300, fileforms=("pdf", "png"), keep_figure: bool = False,
+                        **circular_kwargs) -> dict:
     """Draw the composite (a map with ring key, b mtDNA content per NUMT locus, c landscape, d catalog with the annotation).
 
-    ``layout="figure"`` writes just the figure at the figure width; ``layout="page"`` places it on a page in the style's
+    ``layout="figure"`` writes just the figure at the figure width (plus ``figure_margin`` on each side, default 0, so it places at
+    100 % in a text column of that width); ``layout="page"`` places it on a page in the style's
     geometry with the legend underneath. Plot heights scale with the figure width; text stays at the style's sizes."""
     from .numts import _identity_colorbar, draw_numt_catalog, draw_numt_landscape, draw_numt_sizes
     from .renderer import draw_circular_plot, read_reference
@@ -250,7 +252,7 @@ def plot_journal_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: di
     top_block = max(0.02 + h_map + 0.06, 0.34 + b_h + 0.30) + 0.21
     fig_h = top_block + h_land + 0.56 + h_cat + 0.30
     if layout == "figure":
-        pad = 2.0 * MM
+        pad = parse_length_mm(figure_margin) * MM
         PW, PH = W + 2 * pad, fig_h + 2 * pad
         X0, top = pad, PH - pad
     else:
@@ -379,7 +381,7 @@ def run_composite(args) -> dict:
         page=args.page, figure_width=args.figure_width, legend_columns=args.legend_columns, panel_labels=args.panel_labels,
         panel_label_pt=args.panel_label_size, text_pt=args.text_size, label=label, title=args.title or "", species=args.species or "",
         caption=Path(args.caption_file).read_text().strip() if args.caption_file else None, caption_append=args.caption_append or "",
-        fields=fields, legend=not args.no_legend, dpi=args.dpi, fileforms=tuple(args.fileform))
+        fields=fields, legend=not args.no_legend, figure_margin=args.figure_margin, dpi=args.dpi, fileforms=tuple(args.fileform))
     res["font"] = font
     print(json.dumps(res, indent=2, default=str))
     for w in res["warnings"]:

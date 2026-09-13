@@ -378,6 +378,8 @@ def build_parser():
                     help="figure: just the figure at the figure width; page: the figure on a page with the legend underneath (default).")
     gs.add_argument("--page", help="Page size: letter, a4, nature-communications or WxH with a unit (210x279mm, 8.5x11in). Default: the style's page.")
     gs.add_argument("--figure-width", help="Figure width, e.g. 170mm or 6.7in. Default: the style's width (nature-communications: 170 mm).")
+    gs.add_argument("--figure-margin", default="0mm",
+                    help="Blank margin around the figure in --layout figure (e.g. 2mm); default 0, so the file is exactly the figure width.")
     gs.add_argument("--legend-columns", type=int, choices=[1, 2], help="Legend columns (nature-communications: 2).")
     gs.add_argument("--panel-labels", choices=["lower", "upper"], help="Panel letters a-d or A-D (default: the style's).")
     gs.add_argument("--panel-label-size", type=float, help="Panel letter size in pt (nature-communications: 8).")

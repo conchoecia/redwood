@@ -81,7 +81,7 @@ def test_figure_layout_is_the_figure_width_and_keeps_text_in_range(inputs):
     res = plot_journal_figure(mito_fasta=d / "mt.fa", loci=rows, chrom_lengths=lengths, out_base=d / "fig", gff=d / "mt.gff",
                               layout="figure", dpi=50, fileforms=("png",), keep_figure=True, species="Genus species")
     fig = res.pop("figure")
-    assert fig.get_size_inches()[0] == pytest.approx((170 + 4) / 25.4)
+    assert fig.get_size_inches()[0] == pytest.approx(170 / 25.4)          # exactly the figure width: places at 100 % in a 170 mm column
     sizes = {round(t.get_fontsize(), 2) for t in _texts(fig)}
     assert min(sizes) >= 5.0 and max(sizes) <= 8.0                     # 5-7 pt text, 8 pt panel letters
     assert {"a", "b", "c", "d"} <= {t.get_text() for t in _texts(fig)}
