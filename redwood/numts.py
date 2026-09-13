@@ -268,7 +268,11 @@ def _identity_color(ident: float, lo: float = 0.75):
 
 def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, max_chroms: int = 40, min_chrom_bp: int = 0,
                         title: str | None = None) -> None:
-    chroms = [c for c, l in sorted(chrom_lengths.items(), key=lambda kv: -kv[1]) if l >= min_chrom_bp][:max_chroms]
+    # show the long sequences (>= min_chrom_bp, default 2 % of the longest) plus every sequence that carries a locus
+    if not min_chrom_bp and chrom_lengths:
+        min_chrom_bp = int(0.02 * max(chrom_lengths.values()))
+    with_loci = {r["chrom"] for r in loci}
+    chroms = [c for c, l in sorted(chrom_lengths.items(), key=lambda kv: -kv[1]) if l >= min_chrom_bp or c in with_loci][:max_chroms]
     chroms = sorted(chroms, key=lambda c: -chrom_lengths[c])
     index = {c: i for i, c in enumerate(chroms)}
     for c in chroms:
