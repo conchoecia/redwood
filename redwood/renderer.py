@@ -13,7 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.colors import to_rgba
 from matplotlib.patches import Polygon, Wedge
 import numpy as np
@@ -81,17 +81,29 @@ def polar_xy(radius: float, angle: float) -> tuple[float, float]:
     return radius * np.cos(radians), radius * np.sin(radians)
 
 
-def add_arc(ax, start: int, stop: int, length: int, radius: float, width: float, **kwargs) -> None:
+def _add_patch_fast(ax, patch, sink: list | None = None) -> None:
+    """Add a patch without the per-patch data-limit update of ``Axes.add_patch``.
+
+    Redwood fixes the axis limits itself, and ``add_patch`` recomputes the Bezier extrema of every wedge to update the data
+    limits, which dominated render time (a map has ~10^4 read wedges). With ``sink`` the patch is collected for a
+    ``PatchCollection`` instead."""
+    if sink is not None:
+        sink.append(patch)
+    else:
+        ax.add_artist(patch)
+
+
+def add_arc(ax, start: int, stop: int, length: int, radius: float, width: float, sink: list | None = None, **kwargs) -> None:
     if stop <= start:
         return
     if stop - start >= length:
-        ax.add_patch(Wedge((0, 0), radius, 0, 360, width=width, **kwargs))
+        _add_patch_fast(ax, Wedge((0, 0), radius, 0, 360, width=width, **kwargs), sink)
         return
     if stop > length:
-        add_arc(ax, start, length, length, radius, width, **kwargs)
-        add_arc(ax, 0, stop - length, length, radius, width, **kwargs)
+        add_arc(ax, start, length, length, radius, width, sink=sink, **kwargs)
+        add_arc(ax, 0, stop - length, length, radius, width, sink=sink, **kwargs)
         return
-    ax.add_patch(Wedge((0, 0), radius, theta(stop, length), theta(start, length), width=width, **kwargs))
+    _add_patch_fast(ax, Wedge((0, 0), radius, theta(stop, length), theta(start, length), width=width, **kwargs), sink)
 
 
 def add_directional_feature(
@@ -374,6 +386,7 @@ def add_cigar_read(
     one full circle so its 3' end never overlaps its 5' end.
     """
     centerline = radius - READ_ARC_WIDTH / 2
+    sink: list = []                 # all wedges of this read become one PatchCollection (same look, far fewer artists)
     total = max(1, min(sum(n for op, n in cigar if op in (0, 2, 3, 7, 8)), length))
     chunk = max(1, length // 360)   # op subdivision for a smooth color gradient
     ref = start
@@ -384,7 +397,7 @@ def add_cigar_read(
                 w = CIGAR_OP_WIDTH[1]
                 s = (ref - oplen // 2) % length
                 color = _gradient_color(gradient, drawn / total)
-                add_arc(ax, s, s + oplen, length, centerline + w / 2, w,
+                add_arc(ax, s, s + oplen, length, centerline + w / 2, w, sink=sink,
                         color=color, alpha=alpha, linewidth=0)
             continue
         if op in (4, 5, 6):  # S / H / P — no span on the circle
@@ -406,11 +419,13 @@ def add_cigar_read(
             # sub-arc fully covers the anti-aliased seam between them — without
             # this, the abutting Wedge patches leave faint radial hairlines.
             draw_len = sub if pos + sub >= seg else sub * 2
-            add_arc(ax, s, s + draw_len, length, centerline + w / 2, w,
+            add_arc(ax, s, s + draw_len, length, centerline + w / 2, w, sink=sink,
                     color=color, alpha=alpha, linewidth=0)
             pos += sub
         ref += oplen
         drawn += seg
+    if sink:
+        ax.add_collection(PatchCollection(sink, match_original=True), autolim=False)
 
 
 def read_reference(path: Path) -> str:
@@ -915,7 +930,7 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
     smooth = np.convolve(rng.random(160), np.ones(9) / 9, mode="same")
 
     def wedge(r_out, r_in, a1, a2, **kw):
-        ax.add_patch(Wedge(center, r_out, a1, a2, width=r_out - r_in, linewidth=0, zorder=5, **kw))
+        _add_patch_fast(ax, Wedge(center, r_out, a1, a2, width=r_out - r_in, linewidth=0, zorder=5, **kw))
 
     def arc_xy(r, a1, a2, k=40):
         a = np.radians(np.linspace(a1, a2, k))
