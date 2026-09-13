@@ -745,19 +745,37 @@ def add_feature_label(
     if placed is None:
         placed = []
         ax._redwood_outer_labels = placed
-    min_sep = size * units_per_point(ax) * 1.3 / max(outer_radius, 1e-6) * (180 / np.pi)  # degrees
-    tier = 0
-    while any(abs(((angle - a + 180) % 360) - 180) < min_sep and t == tier for a, t in placed):
-        tier += 1
-    placed.append((angle, tier))
-    step = label_width_units(ax, name, size) + 0.012
-    base = outer_radius + tier * step
+    upp = units_per_point(ax)
+    min_sep = size * upp * 1.3 / max(outer_radius, 1e-6) * (180 / np.pi)  # degrees
+    width = label_width_units(ax, name, size)
+    step = width + 0.012
+    label_angle = angle
+    shift_dir = 0.0                         # set once the label has been rotated off a position label
+    for _ in range(12):
+        tier = 0
+        while any(abs(((label_angle - a + 180) % 360) - 180) < min_sep and t == tier for a, t in placed):
+            tier += 1
+        if tier and shift_dir:
+            # already rotated off a position label and another label sits there: spread sideways instead of stacking
+            # outward along the same ray (which would read as one word, e.g. "WR")
+            label_angle += shift_dir * min_sep
+            continue
+        base = outer_radius + tier * step
+        # a position label ("5,000 bp") in the way: rotate this label just clear of it; the leader bends back to the feature
+        clash = _position_label_conflict(ax, label_angle, base + 0.008, base + 0.008 + width, 0.6 * size * upp)
+        if clash is None:
+            break
+        pa, need, d = clash
+        shift_dir = shift_dir or (1.0 if d >= 0 else -1.0)
+        label_angle = pa + (need + 0.3) * shift_dir
+    placed.append((label_angle, tier))
     lead0 = polar_xy(outer_radius - 0.010, angle)
-    lead1 = polar_xy(base + 0.004, angle)
+    lead1 = polar_xy(base + 0.004, label_angle)
     ax.plot([lead0[0], lead1[0]], [lead0[1], lead1[1]], color=str(feature.get("color", color)), lw=0.6, alpha=0.9, zorder=5)
-    x, y = polar_xy(base + 0.008, angle)
+    x, y = polar_xy(base + 0.008, label_angle)
+    upright = label_angle % 360
     left_half = 90 < upright < 270         # radial text on the left half would read upside down
-    radial = angle + 180 if left_half else angle
+    radial = label_angle + 180 if left_half else label_angle
     ha = "right" if left_half else "left"
     ax.text(x, y, name, ha=ha, va="center", color=outer_color or color, fontsize=size,
             rotation=radial, rotation_mode="anchor", fontweight="bold", zorder=5)
@@ -786,6 +804,20 @@ def choose_position_label_step(length: int, max_degrees: float = 60.0) -> int:
     ]
     candidates = [step for step in nice_steps if step <= max_bp]
     return max(candidates) if candidates else nice_steps[0]
+
+
+def _position_label_conflict(ax, angle: float, r0: float, r1: float, half_height: float):
+    """A recorded position label that a radial label spanning radii [r0, r1] at ``angle`` would overlap, as
+    (label angle, required angular separation in degrees, signed offset), or None."""
+    for pa, half_deg, pr0, pr1 in getattr(ax, "_redwood_position_labels", []):
+        if r1 < pr0 or r0 > pr1:
+            continue
+        r_mid = max(1e-6, (max(r0, pr0) + min(r1, pr1)) / 2)
+        need = half_deg + float(np.degrees(half_height / r_mid)) + 0.8
+        d = ((angle - pa + 180) % 360) - 180
+        if abs(d) < need:
+            return pa, need, d
+    return None
 
 
 def add_position_labels(ax, length: int, color: str) -> None:
@@ -817,6 +849,12 @@ def add_position_labels(ax, length: int, color: str) -> None:
                 rotation_mode="anchor",
                 alpha=0.86,
             )
+            # remember the label's footprint (angular half-width at its radius, radial band) so outer feature labels avoid it
+            upp = units_per_point(ax)
+            text_w = len(f"{bp:,} bp") * 5.2 * 0.58 * upp
+            text_h = 5.2 * upp
+            footprint = (angle, float(np.degrees((text_w / 2 + 0.004) / 1.238)), 1.238 - 0.6 * text_h, 1.238 + 0.6 * text_h)
+            ax.__dict__.setdefault("_redwood_position_labels", []).append(footprint)
 
 
 def read_spans(path: Path | None, true_length: int, max_reads: int) -> list[tuple[int, int]]:

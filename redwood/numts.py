@@ -551,30 +551,48 @@ def plot_composite_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: 
     from .renderer import draw_circular_plot, read_reference
     reference = read_reference(Path(mito_fasta)); L = len(reference)
     w, h = page
-    left, right, top, bottom = 0.105, 0.925, 0.965, 0.06
     nchrom = len({r["chrom"] for r in loci} | {c for c, l in chrom_lengths.items() if l >= 0.02 * max(chrom_lengths.values())}) if chrom_lengths else 1
     nchrom = min(40, nchrom)
-    h_map = 0.37 * h
+    fig = plt.figure(figsize=(w, h))
+    # top row: the map (a) starts in the top-left corner of the page and takes all the space beside the class panel (b); the
+    # landscape (c) and catalog (d) keep margins wide enough for their chromosome labels and color bar
     h_land = min(0.26 * h, max(0.15 * h, (0.085 * nchrom + 0.5) * h / 9.0))
     h_cat = 0.23 * h
-    fig = plt.figure(figsize=(w, h))
-    gs = fig.add_gridspec(3, 2, width_ratios=[0.64, 0.36], height_ratios=[h_map, h_land, h_cat], hspace=0.40, wspace=0.30,
-                          left=left, right=right, top=top, bottom=bottom)
-    ax0 = fig.add_subplot(gs[0, 0]); ax_sz = fig.add_subplot(gs[0, 1]); ax1 = fig.add_subplot(gs[1, :]); ax2 = fig.add_subplot(gs[2, :])
-    ax0.set_anchor("N")                                     # map and class panel share their top edge
+    bot_gs = fig.add_gridspec(2, 1, height_ratios=[h_land, h_cat], hspace=0.42, left=0.105, right=0.925, top=0.545, bottom=0.06)
+    ax_sz = fig.add_axes([0.700, 0.615, 0.275, 0.340])                          # class panel, same box as before
+    ax0 = fig.add_axes([0.030, 0.615, 0.620, 0.367]); ax0.set_anchor("W")      # map: same row, pushed up and left, ~8 % larger
+    ax1 = fig.add_subplot(bot_gs[0]); ax2 = fig.add_subplot(bot_gs[1])
     draw_circular_plot(ax0, length=L, reference=reference, gff=Path(gff) if gff else None, main_bam=Path(main_bam) if main_bam else None,
                        rnaseq_bam=Path(rnaseq_bam) if rnaseq_bam else None, variant_table=Path(variant_table) if variant_table else None,
                        title=title, **circular_kwargs)
     for s in ax0.spines.values(): s.set_visible(False)
+    # outer labels (radial tRNA/fragment names) can reach past the map axes; if any would leave the page on the left or top,
+    # nudge the map right/down by exactly the overshoot (plus a small margin)
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer(); fw, fh = fig.bbox.width, fig.bbox.height
+    boxes = [t.get_window_extent(rend) for t in ax0.texts if t.get_text()]
+    if boxes:
+        pad = 0.006
+        dx = max(0.0, pad - min(b.x0 for b in boxes) / fw)
+        dy = max(0.0, max(b.y1 for b in boxes) / fh - (1 - pad))
+        if dx or dy:
+            pos = ax0.get_position(original=True)
+            ax0.set_position([pos.x0 + dx, pos.y0 - dy, pos.width, pos.height])
     draw_numt_sizes(ax_sz, loci, L, title="")
     row_pt = ax1.get_position().height * h * 72 / (nchrom + 0.4)      # points available per chromosome row
     draw_numt_landscape(ax1, loci, chrom_lengths, label_fontsize=max(5.0, min(6.0, 0.8 * row_pt)))
     _identity_colorbar(fig, ax1, fraction=0.02, label_size=6, tick_size=5)
     draw_numt_catalog(ax2, loci, L, gff)
+    row_top = ax_sz.get_position().y1 + 0.006             # a and b share one baseline at the top of the class panel
     for letter, ax in zip("abcd", (ax0, ax_sz, ax1, ax2)):        # panel letters in the page margin, clear of titles and tick labels
-        box = ax.get_position()
-        x = max(0.012, box.x0 - 0.085) if ax is not ax_sz else box.x0 - 0.085
-        fig.text(x, min(0.985, box.y1 + 0.006), letter, fontsize=10, fontweight="bold", va="bottom", ha="left")
+        box = ax.get_position(original=True)
+        if ax is ax0:
+            x, y = 0.012, row_top
+        elif ax is ax_sz:
+            x, y = box.x0 - 0.085, row_top
+        else:
+            x, y = max(0.012, box.x0 - 0.085), box.y1 + 0.006
+        fig.text(x, y, letter, fontsize=10, fontweight="bold", va="bottom", ha="left")
     outs = []
     for ff in fileforms:
         p = Path(f"{out_base}.{ff}"); fig.savefig(p, dpi=dpi); outs.append(p)

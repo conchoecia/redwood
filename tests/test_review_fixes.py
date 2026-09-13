@@ -10,7 +10,7 @@ import pysam
 import pytest
 
 from redwood.multipass import read_marks
-from redwood.renderer import PLOT_LIMIT, add_feature_label, at_profile, draw_circular_plot, track_legend_layers
+from redwood.renderer import PLOT_LIMIT, add_feature_label, add_position_labels, at_profile, draw_circular_plot, track_legend_layers
 from redwood.variants import column_variants
 
 
@@ -95,4 +95,18 @@ def test_key_font_never_exceeds_the_reserved_label_room():
     fig.canvas.draw()
     right = ax.transData.inverted().transform((max(t.get_window_extent().x1 for t in key_texts), 0))[0]
     assert right <= ax.get_xlim()[1] + 1e-6                # label text stays inside the axes
+    plt.close(fig)
+
+
+def test_outer_labels_step_aside_for_position_labels():
+    fig, ax = _label_axes()
+    add_position_labels(ax, 20000, "gray")
+    bp5000 = next(fp for fp in ax._redwood_position_labels if abs(((fp[0] - (90 - 5000 / 20000 * 360)) + 180) % 360 - 180) < 1e-6)
+    for start, name in ((4990, "rrnS-fragment"), (5010, "trnW-long")):   # both long enough to reach the "5,000 bp" label
+        add_feature_label(ax, {"start": start, "stop": start + 40, "name": name, "type": "tRNA"}, 20000, 1.094, "white",
+                          outer_radius=1.178, outer_color="black", prefer_outside=True)
+    (a1, t1), (a2, t2) = ax._redwood_outer_labels[-2:]
+    for label_angle in (a1, a2):
+        assert abs(((label_angle - bp5000[0]) + 180) % 360 - 180) > bp5000[1]   # clear of the bp label's angular footprint
+    assert abs(((a1 - a2) + 180) % 360 - 180) > 0.5                              # spread sideways, not stacked on one ray
     plt.close(fig)
