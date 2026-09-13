@@ -90,6 +90,8 @@ Read classes and how to read them. They describe where the segments of a read al
    you believe is the molecule), rebuild the consensus from that population only (`samtools consensus -c 0.51` on their BAM);
    racon on HiFi collapses repeat arrays and on CLR shrinks the molecule, so use it only to polish a de novo CLR/ONT contig.
 
+**Figures for a paper:** `redwood composite --style nature-communications` (or `generic`) lays out the map and NUMT panels to the journal's measured geometry, as a figure (`--layout figure`) or a full page with the legend (`--layout page`); set `--page`, `--figure-width`, `--panel-labels`, `--figure-label` or `--figure-number --supplementary` as the manuscript needs, and edit `<base>.legend.md` rather than retyping the numbers.
+
 ## 5. Deliverables that let someone else check the claim
 Final FASTA (rotated to COX1) + GFF/GenBank; the doubled/tripled-reference BAM and a single-copy BAM with `HP` (haplotype cluster)
 and `PO` (segment class) tags; per-population BAMs; `variants.tsv`; `numts.loci.tsv` + `numts.read_classes.tsv` +

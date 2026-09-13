@@ -274,6 +274,37 @@ the strand arrow, variant columns, AT content, NUMT loci when `--numt-loci` is g
 step, single-pass reads with indel width changes and mismatch dots). Only the layers actually drawn are listed. The figure is
 widened by the label column; `--no-track-legend` (plot and run) restores the square map.
 
+## Journal-style composite figures
+
+`redwood composite` draws the circular map with the NUMT panels (a map with ring key, b mtDNA content per locus, c landscape,
+d catalog with the annotation) laid out to a journal style, either as the figure alone or as a full page with the legend
+under the figure:
+
+```bash
+redwood composite --style nature-communications --layout page --page letter \
+    --mito-fasta final.fa --gff final.gff --numt-loci numts/numts.loci.tsv --nuclear-fasta nuclear.fa \
+    --long-read-bam rw/long_reads.redwood.bam --rnaseq-bam rw/rnaseq.mito.bam --variant-table rw/redwood.variants.long_reads.tsv \
+    --figure-number 4 --supplementary --species "Genus species" --font-dir fonts/ --output-base figS4
+```
+
+Writes `figS4.pdf`, `figS4.png` and `figS4.legend.md` (the legend text with `**bold**`/`*italic*` markup). Styles are presets of
+measured values; every option overrides them:
+
+| option | nature-communications | generic |
+|---|---|---|
+| `--page` (letter, a4, WxH mm/in) | 210 x 279 mm | letter |
+| `--figure-width` | 170 mm (on a 183.8 mm two-column measure) | 165 mm |
+| `--legend-columns` | 2 (7 pt on 10 pt leading, 3 mm below the figure) | 1 (8 pt) |
+| `--text-size MIN MAX` | 5 7 pt | 5 8 pt |
+| `--panel-labels`, `--panel-label-size` | lower, 8 pt bold | upper, 10 pt bold |
+| label from `--figure-number` (`--supplementary`, `--label-prefix`) | Fig. N / Supplementary Fig. N, ` \| ` separator | Figure N / Supplementary Figure N |
+| fonts (`--font`, `--font-dir`) | Helvetica, Arial, Nimbus Sans, Liberation Sans, DejaVu Sans; embedded as TrueType | same |
+
+The Nature Communications values were measured from 2025 article PDFs. `--figure-label` sets the label text exactly (e.g.
+"Figure S4"); `--layout figure` writes the figure alone at the figure width. The legend is generated from the data (molecule
+length, reads drawn, box widening in panel c); replace it with `--caption-file` (markup and `{length}`, `{n_drawn}`,
+`{n_reads}`, `{min_box_kb}`, `{a}`..`{d}` fields) or extend it with `--caption-append`.
+
 ## Notes
 
 This repository keeps the original redwood plotting lineage from

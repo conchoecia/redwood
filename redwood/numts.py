@@ -382,6 +382,9 @@ def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, 
     ax.set_ylim(-0.7, len(chroms) - 0.3); ax.set_xlim(0, max(chrom_lengths[c] for c in chroms) / 1e6 * 1.02 if chroms else 1)
     ax.set_xlabel("position (Mb)", fontsize=7); ax.tick_params(axis="x", labelsize=6); ax.invert_yaxis()
     n = collections.Counter(r["class"] for r in loci)
+    ax._redwood_landscape = {"min_box_kb": min_w / 1000, "span_lo_kb": (min(widened) if widened else 0) / 1000,
+                             "span_hi_kb": (max(widened) if widened else 0) / 1000,
+                             "max_factor": (min_w / max(1, min(widened))) if widened else 1.0}
     note = "box height = class, color = identity to the mtDNA"
     if widened:
         lo, hi = min(widened) / 1000, max(widened) / 1000
@@ -486,7 +489,7 @@ def add_annotation_strip(ax, gff: Path, mito_length: int, *, lane_in: float = 0.
 
 
 def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None = None, *, title: str | None = None,
-                      full_length: float = 0.95, large_bp: int = 5000, legend_ncol: int = 3) -> None:
+                      full_length: float = 0.95, large_bp: int = 5000, legend_ncol: int = 3, legend: bool = True) -> None:
     """Each locus as horizontal segments over the mitogenome coordinates it covers, at y = identity, colored by class.
 
     A locus whose alignments cover the mitogenome in several intervals keeps one identity and one class; the intervals are
@@ -506,14 +509,14 @@ def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None =
     ax.set_xlim(0, mito_length / 1000); ax.set_ylabel("identity to mtDNA (%)", fontsize=7); ax.set_xlabel("mitogenome position (kb)", fontsize=7)
     ax.tick_params(labelsize=6)
     lo = min([r["identity"] * 100 for r in loci] + [95]); bottom = max(60, lo - 3)
-    ax.set_ylim(bottom - 0.24 * (100.5 - bottom), 100.5)          # an empty band under the data holds the legend
+    ax.set_ylim(bottom - (0.24 * (100.5 - bottom) if legend else 0.0), 100.5)   # an empty band under the data holds the legend
     ax.set_yticks([t for t in ax.get_yticks() if bottom - 1e-9 <= t <= 100])
     kb = f"{large_bp / 1000:g}"
     labels = {"full-length": f"full-length (\u2265{full_length * 100:g}%)", "large": f"large (\u2265{kb} kb)",
               "fragment": f"fragment (<{kb} kb)"}                     # short: panel b's legend spells the classes out
     handles = [Line2D([], [], color=col, lw=2, label=labels[cls]) for cls, col in cc.items()]
     handles.append(Line2D([], [], color="#555555", lw=0.9, ls=":", label="alignments in one locus"))
-    ax.legend(handles=handles, fontsize=6 if legend_ncol > 1 else 5.5, loc="lower right", frameon=True, framealpha=0.9, edgecolor="none",
+    if legend: ax.legend(handles=handles, fontsize=6 if legend_ncol > 1 else 5.5, loc="lower right", frameon=True, framealpha=0.9, edgecolor="none",
               ncol=4 if legend_ncol > 1 else 1, columnspacing=1.0, handlelength=1.8)
     ax.set_title(title or f"NUMT catalog: {len(loci)} loci, {sum(r.get('mtdna_bp', r['mito_bp']) for r in loci):,} bp of mtDNA in the nuclear genome\n"
                  "class = mtDNA content of the whole locus", fontsize=6.5 if legend_ncol > 1 else 6, loc="left")

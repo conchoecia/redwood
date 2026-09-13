@@ -903,10 +903,10 @@ def _key_center(radius: float = KEY_RADIUS) -> tuple[float, float]:
     return cx, cy
 
 
-def _key_radius(n_layers: int, upp: float) -> float:
+def _key_radius(n_layers: int, upp: float, pitch_pt: float = KEY_PITCH_PT) -> float:
     """Outer radius of the key: KEY_RADIUS, grown towards KEY_RADIUS_MAX when the map is small (large data units per point)
     so each row gets about KEY_PITCH_PT points."""
-    return float(min(KEY_RADIUS_MAX, max(KEY_RADIUS, KEY_INNER + max(1, n_layers) * KEY_PITCH_PT * upp)))
+    return float(min(KEY_RADIUS_MAX, max(KEY_RADIUS, KEY_INNER + max(1, n_layers) * pitch_pt * upp)))
 
 
 def _units_per_point_for(ax, xspan: float, yspan: float) -> float:
@@ -919,8 +919,13 @@ def _units_per_point_for(ax, xspan: float, yspan: float) -> float:
     return max(xspan / (w_in * 72.0), yspan / (h_in * 72.0))
 
 
-def _key_font(pitch: float, upp: float) -> float:
-    return float(min(KEY_FONT_RANGE[1], max(KEY_FONT_RANGE[0], 0.8 * pitch / upp)))
+def _key_font(pitch: float, upp: float, rng: tuple[float, float] = KEY_FONT_RANGE) -> float:
+    return float(min(rng[1], max(rng[0], 0.8 * pitch / upp)))
+
+
+def _key_font_range(ax) -> tuple[float, float]:
+    """Font range of the ring key: KEY_FONT_RANGE, or the range set by draw_circular_plot(text_pt=...)."""
+    return getattr(ax, "_redwood_key_font_range", KEY_FONT_RANGE)
 
 
 def track_legend_width(ax, n_layers: int = 1) -> float:
@@ -929,12 +934,13 @@ def track_legend_width(ax, n_layers: int = 1) -> float:
     ``n_layers`` is an upper bound on the layers the key will list: fewer layers mean a larger pitch and so a larger font,
     so the reservation is made for the font of ``n_layers`` and :func:`add_track_legend` never exceeds it (stored on the
     axes). The default of one layer reserves room for the largest font."""
-    width, font, radius = 0.3, KEY_FONT_RANGE[1], KEY_RADIUS
+    rng = _key_font_range(ax); pitch_pt = max(KEY_PITCH_PT, 1.1 * rng[0])
+    width, font, radius = 0.3, rng[1], KEY_RADIUS
     for _ in range(8):                                   # the scale depends on the width; converges in a few steps
         upp = _units_per_point_for(ax, 2 * PLOT_LIMIT + width, 2 * PLOT_LIMIT)
-        radius = _key_radius(n_layers, upp)
+        radius = _key_radius(n_layers, upp, pitch_pt)
         cx, _ = _key_center(radius)
-        font = _key_font((radius - KEY_INNER) / max(1, n_layers), upp)
+        font = _key_font((radius - KEY_INNER) / max(1, n_layers), upp, rng)
         right = cx + 0.03 + KEY_LABEL_CHARS * font * 0.56 * upp + 0.02
         width = max(0.0, right - PLOT_LIMIT)
     ax._redwood_key_font = font
@@ -979,12 +985,13 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
     x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
     upp = _units_per_point_for(ax, abs(x1 - x0), abs(y1 - y0))
     n = len(layers)
-    radius = getattr(ax, "_redwood_key_radius", None) or _key_radius(n, upp)
+    rng = _key_font_range(ax)
+    radius = getattr(ax, "_redwood_key_radius", None) or _key_radius(n, upp, max(KEY_PITCH_PT, 1.1 * rng[0]))
     center = _key_center(radius)
     cx, cy = center
     pitch = (radius - KEY_INNER) / n
     band = 0.78 * pitch
-    fontsize = min(_key_font(pitch, upp), getattr(ax, "_redwood_key_font", KEY_FONT_RANGE[1]))
+    fontsize = min(_key_font(pitch, upp, rng), getattr(ax, "_redwood_key_font", rng[1]))
     t1, t2 = 91.0, 179.0                      # angular extent of the cut-out (degrees, counter-clockwise from +x)
     rng = np.random.default_rng(7)
     smooth = np.convolve(rng.random(160), np.ones(9) / 9, mode="same")
@@ -1088,8 +1095,12 @@ def draw_circular_plot(
     numt_loci: Path | None = None,
     read_classes: Path | None = None,
     track_legend: bool = True,
+    text_pt: tuple[float, float] | None = None,
 ) -> None:
+    """``text_pt=(min, max)`` keeps every label of the map within that size range in points (e.g. (5, 7) for Nature
+    journals); labels that do not fit at the minimum go outside the ring instead of shrinking."""
     fg = "#eef4fb" if dark else "#111827"
+    lo, hi = text_pt if text_pt else (0.0, 99.0)
     rna_forward = "#b6906a" if dark else BARK_COLOR
     rna_reverse = "#caa078" if dark else BARK_COLOR_ALT
     tick_color = "#9aa8b7" if dark else "#667085"
@@ -1097,6 +1108,8 @@ def draw_circular_plot(
     rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
+    if text_pt:
+        ax._redwood_key_font_range = (max(KEY_FONT_RANGE[0], lo), min(max(KEY_FONT_RANGE[1], lo), hi))
     if track_legend:
         # upper bound on the layers the key can list, so the reserved label room is never exceeded
         key_layers = ((1 if np.max(rnaseq_forward + rnaseq_reverse, initial=0) > 0 else 0) + (2 if gff else 0) + (1 if reference else 0)
@@ -1143,7 +1156,7 @@ def draw_circular_plot(
             if trna_labels != "none":
                 text = trna_short_label(str(feature["name"])) if trna_labels == "letter" else str(feature["name"])
                 add_feature_label(ax, feature, length, 1.094, label_color, outer_radius=outer_radius,
-                                  outer_color=fg, label_text=text, fontsize=4.6, min_fontsize=3.8,
+                                  outer_color=fg, label_text=text, fontsize=min(max(4.6, lo), hi), min_fontsize=min(max(3.8, lo), hi),
                                   prefer_outside=True)
             continue
         radius = 1.030 + (float(feature.get("lane", 0)) * 0.048)
@@ -1160,7 +1173,8 @@ def draw_circular_plot(
         )
         if feature_labels:
             add_feature_label(ax, feature, length, radius - (width / 2), label_color,
-                              outer_radius=outer_radius, outer_color=fg)
+                              outer_radius=outer_radius, outer_color=fg, fontsize=min(max(5.0, lo), hi),
+                              min_fontsize=min(max(3.6, lo), hi))
 
     if reference:
         add_at_track(ax, reference, 0.918, 0.954)
@@ -1261,6 +1275,8 @@ def draw_circular_plot(
             if want_marks and read.marks:
                 add_read_marks(ax, read.start, read.marks, length, radius, mark_filter=mark_filter)
             layer_flags["has_regular"] = True
+        ax._redwood_read_counts = {"reads": len(multipass_reads) + len(regular_reads), "multipass_drawn": len(selected),
+                                   "regular_drawn": sum(1 for _read, lane in placed if r_top - (rung + lane) * rung_w > r_min)}
         upp = units_per_point(ax)
 
         def opening_at(y):                  # usable width of the central opening at height y
@@ -1280,13 +1296,13 @@ def draw_circular_plot(
         if class_of:
             centered_row([(text, CLASS_COLORS[cls]) for cls, text in (
                 ("mito+nuclear_at_NUMT_locus", "NUMT junction"), ("mito+nuclear_elsewhere", "chimera"),
-                ("nuclear_only_at_NUMT_locus", "nuclear"))], -0.36, 4.6, 3.6, False)
+                ("nuclear_only_at_NUMT_locus", "nuclear"))], -0.36, max(4.6, lo), max(3.6, lo), False)
         if want_marks:
             centered_row([(t, MARK_COLORS[k]) for k, t in (("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del"))],
-                         -0.22, 5.2, 3.6, True)
+                         -0.22, min(max(5.2, lo), hi), max(3.6, lo), True)
             caption = "read mismatches" + (" (shared)" if read_mismatches == "shared" else "")
-            size = 4.6
-            while size > 3.6 and len(caption) * size * 0.56 * upp > opening_at(-0.29):
+            size = max(4.6, lo)
+            while size > max(3.6, lo) and len(caption) * size * 0.56 * upp > opening_at(-0.29):
                 size -= 0.2
             if len(caption) * size * 0.56 * upp > opening_at(-0.29):
                 caption = "read mismatches"
@@ -1298,8 +1314,8 @@ def draw_circular_plot(
                                      has_trna=any(str(f["type"]) == "tRNA" for f in features),
                                      has_numts=bool(numt_rows), **layer_flags)
         add_track_legend(ax, layers, dark=dark, has_marks=(read_mismatches != "none" and reference is not None))
-    ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=9, fontweight="bold")
-    ax.text(0, -0.085, "bp", ha="center", va="center", color=tick_color, fontsize=7)
+    ax.text(0, 0.02, f"{length:,}", ha="center", va="center", color=fg, fontsize=min(9, hi), fontweight="bold")
+    ax.text(0, -0.085, "bp", ha="center", va="center", color=tick_color, fontsize=min(7, hi))
     if title:
         ax.set_title(title, color=fg, fontsize=15, fontweight="bold", pad=10)
     if subtitle:

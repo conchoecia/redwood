@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .renderer import run_plot
 from .numts import run_numts
+from .composite import STYLES, run_composite
 from .variants import run_variants
 from .workflow import (
     map_long,
@@ -352,6 +353,49 @@ def build_parser():
     parser_numts.add_argument("--figure-rnaseq-bam", type=Path)
     parser_numts.add_argument("--figure-variant-table", type=Path)
     parser_numts.set_defaults(func=run_numts)
+
+    parser_comp = subparsers.add_parser(
+        "composite",
+        help="journal-style figure: circular map + NUMT panels, as a figure or a full page with the legend",
+        description="Draw the mitogenome map with the NUMT panels laid out to a journal style. Styles set the figure width, text "
+                    "and panel-label sizes, fonts, page geometry and legend format; every setting can be overridden.",
+    )
+    gi = parser_comp.add_argument_group("inputs")
+    gi.add_argument("--mito-fasta", required=True, type=Path)
+    gi.add_argument("--numt-loci", required=True, type=Path, help="numts.loci.tsv from redwood numts.")
+    gi.add_argument("--nuclear-fasta", required=True, type=Path, help="Nuclear assembly used for the catalog (its .fai gives the sequence lengths).")
+    gi.add_argument("--gff", type=Path, help="Mitogenome annotation.")
+    gi.add_argument("--long-read-bam", type=Path, help="Reads on the multiplied reference (redwood long_reads.redwood.bam).")
+    gi.add_argument("--rnaseq-bam", type=Path)
+    gi.add_argument("--variant-table", type=Path, help="redwood variants TSV for the variant ring.")
+    go = parser_comp.add_argument_group("output")
+    go.add_argument("--output-base", required=True, type=Path, help="Writes <base>.pdf/.png and <base>.legend.md.")
+    go.add_argument("--fileform", nargs="+", default=["pdf", "png"])
+    go.add_argument("--dpi", type=int, default=300)
+    gs = parser_comp.add_argument_group("layout and style")
+    gs.add_argument("--style", choices=sorted(STYLES), default="nature-communications")
+    gs.add_argument("--layout", choices=["figure", "page"], default="page",
+                    help="figure: just the figure at the figure width; page: the figure on a page with the legend underneath (default).")
+    gs.add_argument("--page", help="Page size: letter, a4, nature-communications or WxH with a unit (210x279mm, 8.5x11in). Default: the style's page.")
+    gs.add_argument("--figure-width", help="Figure width, e.g. 170mm or 6.7in. Default: the style's width (nature-communications: 170 mm).")
+    gs.add_argument("--legend-columns", type=int, choices=[1, 2], help="Legend columns (nature-communications: 2).")
+    gs.add_argument("--panel-labels", choices=["lower", "upper"], help="Panel letters a-d or A-D (default: the style's).")
+    gs.add_argument("--panel-label-size", type=float, help="Panel letter size in pt (nature-communications: 8).")
+    gs.add_argument("--text-size", type=float, nargs=2, metavar=("MIN", "MAX"), help="Figure text size range in pt (nature-communications: 5 7).")
+    gs.add_argument("--font", action="append", help="Font family to try first (repeatable). The style's list follows (Helvetica, Arial, ...).")
+    gs.add_argument("--font-dir", action="append", help="Directory of .ttf/.otf fonts to register (repeatable).")
+    gl = parser_comp.add_argument_group("label and legend")
+    gl.add_argument("--figure-label", help='Exact label, e.g. "Figure S4" or "Supplementary Fig. 4" (overrides the options below).')
+    gl.add_argument("--figure-number", help="Figure number; the label is the style's prefix + number.")
+    gl.add_argument("--supplementary", action="store_true", help="Use the style's supplementary prefix (nature-communications: Supplementary Fig.).")
+    gl.add_argument("--label-prefix", help='Prefix word to use with --figure-number instead of the style\'s, e.g. "Supplementary Figure".')
+    gl.add_argument("--species", help="Species name for the default title (set in italics).")
+    gl.add_argument("--title", help="Title sentence after the label; markup: **bold**, *italic*.")
+    gl.add_argument("--caption-file", type=Path, help="Legend body with markup and {fields}; default: a generated description of panels a-d.")
+    gl.add_argument("--caption-append", help="Sentence(s) appended to the legend body.")
+    gl.add_argument("--field", action="append", metavar="KEY=VALUE", help="Extra {KEY} value for the legend text (repeatable).")
+    gl.add_argument("--no-legend", action="store_true", help="No legend on the page and no <base>.legend.md.")
+    parser_comp.set_defaults(func=run_composite)
 
     parser_run = subparsers.add_parser(
         "run",
