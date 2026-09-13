@@ -70,8 +70,15 @@ def column_variants(
     min_minor_frac: float = 0.05,
     fold: bool = True,
     max_depth: int = 1_000_000,
+    noise_multiplier: float = 3.0,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Return (rows, summary). ``rows`` has one dict per reference column (all columns, flagged or not).
+
+    Columns are flagged against thresholds that adapt to the read error level: the effective
+    minor-allele (and insertion) threshold is ``max(min_minor_frac, noise_multiplier * median)`` where
+    the median is taken over all covered columns. HiFi / Illumina tables (median minor fraction
+    ~0.1-0.3 %) keep ``min_minor_frac``; CLR / ONT tables (median ~10 %) flag only columns that stand
+    well above the noise. Set ``noise_multiplier=0`` for a fixed threshold.
 
     Base counts come from ``pysam.count_coverage`` (C speed, base quality >= ``min_base_quality``);
     deletions and insertions from one pass over the CIGAR strings, so the table is fast even at
@@ -135,26 +142,40 @@ def column_variants(
             continue
         major, major_n = max(((b, c[b]) for b in BASES + ("del",)), key=lambda item: (item[1], item[0] == ref))
         major_frac = major_n / depth
-        ins_frac = ins_total / depth
-        events = []
-        if depth >= min_depth:
-            if major == "del":
-                events.append("deletion")
-            elif major != ref:
-                events.append("mismatch")
-            if ins_frac >= min_minor_frac:
-                events.append("insertion")
-            if (1 - major_frac) >= min_minor_frac:
-                events.append("minor")
-        else:
-            events.append("lowdepth")
         rows.append({
             "pos": pos + 1, "ref": ref, "depth": depth, "A": c["A"], "C": c["C"], "G": c["G"], "T": c["T"],
             "del": c["del"], "ins": ins_total, "ins_seq": ins_seq, "major": major,
             "major_frac": round(major_frac, 4), "minor_frac": round(1 - major_frac, 4),
-            "ins_frac": round(ins_frac, 4), "events": ",".join(events),
+            "ins_frac": round(ins_total / depth, 4), "events": "",
         })
-    return rows, summarize_variants(rows, length, min_minor_frac, min_depth)
+    covered = [r for r in rows if int(r["depth"]) >= min_depth]
+    minor_thr, ins_thr = min_minor_frac, min_minor_frac
+    if covered and noise_multiplier > 0:
+        med_minor = sorted(float(r["minor_frac"]) for r in covered)[len(covered) // 2]
+        med_ins = sorted(float(r["ins_frac"]) for r in covered)[len(covered) // 2]
+        minor_thr = max(min_minor_frac, noise_multiplier * med_minor)
+        ins_thr = max(min_minor_frac, noise_multiplier * med_ins)
+    for r in rows:
+        if r["events"] == "nodepth":
+            continue
+        events = []
+        if int(r["depth"]) >= min_depth:
+            if r["major"] == "del":
+                events.append("deletion")
+            elif r["major"] != r["ref"]:
+                events.append("mismatch")
+            if float(r["ins_frac"]) >= ins_thr:
+                events.append("insertion")
+            if float(r["minor_frac"]) >= minor_thr:
+                events.append("minor")
+        else:
+            events.append("lowdepth")
+        r["events"] = ",".join(events)
+    summary = summarize_variants(rows, length, min_minor_frac, min_depth)
+    summary["effective_minor_threshold"] = round(minor_thr, 4)
+    summary["effective_insertion_threshold"] = round(ins_thr, 4)
+    summary["noise_multiplier"] = noise_multiplier
+    return rows, summary
 
 
 def summarize_variants(rows: list[dict[str, object]], length: int, min_minor_frac: float, min_depth: int) -> dict[str, object]:
@@ -212,6 +233,7 @@ def run_variants(args) -> dict[str, object]:
         Path(args.bam), Path(args.mito_fasta), Path(args.output), summary_path=args.summary,
         all_columns=args.all_columns, contig=args.contig, min_base_quality=args.min_base_quality,
         min_depth=args.min_depth, min_minor_frac=args.min_minor_frac,
+        noise_multiplier=args.noise_multiplier,
     )
     print(json.dumps(summary, indent=2))
     return summary

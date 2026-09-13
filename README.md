@@ -215,7 +215,10 @@ black (indels of at least `--min-indel` bp, the same threshold as the width chan
 (`--read-mismatches shared`) a mismatch is marked only at columns where the read population
 disagrees with the reference above `--min-minor-frac` (default 5 %), so haplotype differences,
 NUMT-derived reads and consensus errors stand out while random ONT/CLR errors stay quiet;
-`--read-mismatches all` marks every mismatch, `none` turns them off. A thin ring just inside the
+`--read-mismatches all` marks every mismatch, `none` turns them off. The threshold adapts to the
+read error level: it is `max(--min-minor-frac, 3 x the median minor-allele fraction over all columns)`,
+so HiFi/Illumina keep the 5 % cutoff while CLR/ONT reads (median ~10 %) flag only columns well above
+their noise (`redwood variants --noise-multiplier`, 0 = fixed). A thin ring just inside the
 annotation (`--no-variant-ring` to hide) shows every flagged column, bar height = minor-allele
 fraction and full height where the majority of reads differs from the reference (red mismatch,
 black deletion, purple insertion, orange minor allele).

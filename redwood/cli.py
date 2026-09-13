@@ -184,7 +184,8 @@ def build_parser():
                              help="Use this redwood variants TSV (e.g. from the whole read set) instead of computing "
                                   "column disagreement from --main-bam.")
     parser_plot.add_argument("--min-minor-frac", dest="min_minor_frac", type=float, default=0.05,
-                             help="Minor-allele fraction that flags a column (default 0.05).")
+                             help="Minor-allele fraction that flags a column (default 0.05; scaled up to 3x the "
+                                  "table-wide median for noisy reads, see `redwood variants --noise-multiplier`).")
     parser_plot.add_argument(
         "--extra-track",
         dest="extra_tracks",
@@ -313,6 +314,9 @@ def build_parser():
     parser_variants.add_argument("--min-depth", type=int, default=5)
     parser_variants.add_argument("--min-minor-frac", type=float, default=0.05,
                                  help="Flag a column as 'minor' / 'insertion' when the fraction reaches this (default 0.05).")
+    parser_variants.add_argument("--noise-multiplier", type=float, default=3.0,
+                                 help="Flag thresholds = max(--min-minor-frac, this x the table-wide median fraction), so "
+                                      "noisy CLR/ONT reads flag only columns above their error level (0 = fixed threshold).")
     parser_variants.set_defaults(func=run_variants)
 
     parser_run = subparsers.add_parser(

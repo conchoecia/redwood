@@ -100,3 +100,30 @@ def test_cli_variants_on_example_dataset(tmp_path):
     summary = json.loads((tmp_path / "s.json").read_text())
     assert summary["columns"] == 16569 and summary["columns_with_depth"] > 0
     assert out.read_text().splitlines()[0].split("\t")[:3] == ["pos", "ref", "depth"]
+
+
+def test_noisy_reads_raise_the_effective_threshold(tmp_path):
+    import random
+    rng = random.Random(1)
+    header = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"LN": len(REF), "SN": "mt"}]}
+    path = tmp_path / "noisy.bam"
+    with pysam.AlignmentFile(path, "wb", header=header) as out:
+        for i in range(40):
+            seq = list(REF)
+            for j in range(len(seq)):            # ~12 % random substitution errors
+                if rng.random() < 0.12:
+                    seq[j] = rng.choice([b for b in "ACGT" if b != seq[j]])
+            if i < 20:
+                seq[30] = "C"                     # a real 50 % variant at column 31 (ref G)
+            a = pysam.AlignedSegment()
+            a.query_name, a.reference_id, a.reference_start, a.mapping_quality = f"n{i}", 0, 0, 60
+            a.cigarstring, a.query_sequence = "60M", "".join(seq)
+            a.query_qualities = pysam.qualitystring_to_array("I" * 60)
+            out.write(a)
+    pysam.index(str(path))
+    rows, summary = column_variants(path, REF, min_depth=1, min_minor_frac=0.05)
+    assert summary["effective_minor_threshold"] > 0.2
+    assert "minor" in rows[30]["events"]
+    assert summary["minor_allele_columns"] <= 5         # noise columns are not flagged
+    rows_fixed, summary_fixed = column_variants(path, REF, min_depth=1, min_minor_frac=0.05, noise_multiplier=0)
+    assert summary_fixed["minor_allele_columns"] > 40    # the fixed threshold flags nearly everything
