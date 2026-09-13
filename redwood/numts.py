@@ -303,8 +303,8 @@ def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, 
     ax.set_xlabel("position (Mb)", fontsize=7); ax.tick_params(axis="x", labelsize=6); ax.invert_yaxis()
     n = collections.Counter(r["class"] for r in loci)
     ax.set_title(title or f"NUMT landscape: {len(loci)} loci ({n.get('full-length', 0)} full-length, {n.get('large', 0)} large, "
-                 f"{n.get('fragment', 0)} fragments; box height = class, colour = identity); {shown} shown on {len(chroms)} sequences",
-                 fontsize=7)
+                 f"{n.get('fragment', 0)} fragments); {shown} shown on {len(chroms)} sequences\n"
+                 "box height = class, colour = identity to the mtDNA", fontsize=6.5, loc="left")
     for s in ax.spines.values(): s.set_visible(False)
 
 
@@ -332,8 +332,9 @@ def draw_numt_sizes(ax, loci: list[dict], mito_length: int, *, full_length: floa
     if legend:
         for cls, col in NUMT_CLASS_COLORS.items():
             ax.add_patch(Rectangle((0, 0), 0, 0, fc=col, ec="none", label=labels[cls]))
-        ax.legend(fontsize=5.5, loc="lower right", frameon=False, handlelength=1.2)
-    ax.set_title(title or "mtDNA content per locus (class thresholds)", fontsize=7)
+        ax.legend(fontsize=5.5, loc="lower right", frameon=True, framealpha=0.9, edgecolor="none", handlelength=1.2)
+    if title != "":
+        ax.set_title(title or "mtDNA content per locus (class thresholds)", fontsize=7)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
 
@@ -366,8 +367,8 @@ def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None =
     for cls, col in cc.items():
         ax.plot([], [], color=col, lw=2, label=labels[cls])
     ax.legend(fontsize=6, loc="lower right", frameon=False, ncol=3, columnspacing=1.0, handlelength=1.5)
-    ax.set_title(title or f"NUMT catalogue: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mitochondrial sequence in the nuclear genome"
-                 " (class = mtDNA content of the whole locus; dotted = pieces of one locus)", fontsize=7)
+    ax.set_title(title or f"NUMT catalogue: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mitochondrial sequence in the nuclear genome\n"
+                 "class = mtDNA content of the whole locus; dotted = the pieces of one locus", fontsize=6.5, loc="left")
 
 
 def plot_numt_figures(loci: list[dict], mito_length: int, chrom_lengths: dict[str, int], outdir: Path, gff: Path | None = None,
@@ -390,32 +391,41 @@ def plot_numt_figures(loci: list[dict], mito_length: int, chrom_lengths: dict[st
 
 def plot_composite_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: dict[str, int], out_base: Path, gff: Path | None = None,
                           main_bam: Path | None = None, rnaseq_bam: Path | None = None, variant_table: Path | None = None,
-                          title: str | None = None, dpi: int = 300, fileforms=("png", "pdf"), page: tuple[float, float] = (8.5, 11.0),
+                          title: str | None = None, dpi: int = 300, fileforms=("png", "pdf"), page: tuple[float, float] = (6.5, 9.0),
                           **circular_kwargs) -> list[Path]:
-    """One page per mitogenome, in letter proportions by default: the redwood circular map (a) with the per-locus mtDNA-content
-    panel that defines the NUMT classes beside it (b), then the NUMT landscape (c) and the NUMT catalogue (d) across the full width."""
+    """One page per mitogenome: the redwood circular map (a) with the per-locus mtDNA-content panel that defines the NUMT classes
+    beside it (b), then the NUMT landscape (c) and the NUMT catalogue (d) across the full width.
+
+    The page is exactly ``page`` inches (default 6.5 x 9, the text area of letter paper with 1-inch margins, so the file prints on
+    letter or A4 and drops into a Word / Google document at full text width without scaling); margins are laid out inside the
+    figure and the output is not cropped, so the PDF page and the PNG pixel size are fixed."""
     from .renderer import draw_circular_plot, read_reference
     reference = read_reference(Path(mito_fasta)); L = len(reference)
-    nchrom = min(40, len(chrom_lengths)); h_land = min(3.0, max(1.8, 0.11 * nchrom + 0.7))
     w, h = page
+    nchrom = len({r["chrom"] for r in loci} | {c for c, l in chrom_lengths.items() if l >= 0.02 * max(chrom_lengths.values())}) if chrom_lengths else 1
+    nchrom = min(40, nchrom)
+    h_map = 0.40 * h; h_cat = 0.19 * h
+    h_land = min(0.26 * h, max(0.15 * h, (0.085 * nchrom + 0.5) * h / 9.0))
     fig = plt.figure(figsize=(w, h))
-    gs = fig.add_gridspec(3, 2, width_ratios=[5.4, 2.6], height_ratios=[5.4, h_land, 2.0], hspace=0.38, wspace=0.30,
-                          left=0.07, right=0.97, top=0.965, bottom=0.05)
+    gs = fig.add_gridspec(3, 2, width_ratios=[0.66, 0.34], height_ratios=[h_map, h_land, h_cat], hspace=0.42, wspace=0.34,
+                          left=0.105, right=0.925, top=0.965, bottom=0.06)
     ax0 = fig.add_subplot(gs[0, 0]); ax_sz = fig.add_subplot(gs[0, 1]); ax1 = fig.add_subplot(gs[1, :]); ax2 = fig.add_subplot(gs[2, :])
     draw_circular_plot(ax0, length=L, reference=reference, gff=Path(gff) if gff else None, main_bam=Path(main_bam) if main_bam else None,
                        rnaseq_bam=Path(rnaseq_bam) if rnaseq_bam else None, variant_table=Path(variant_table) if variant_table else None,
                        title=title, **circular_kwargs)
     for s in ax0.spines.values(): s.set_visible(False)
-    draw_numt_sizes(ax_sz, loci, L)
-    draw_numt_landscape(ax1, loci, chrom_lengths)
+    draw_numt_sizes(ax_sz, loci, L, title="")
+    row_pt = ax1.get_position().height * h * 72 / (nchrom + 0.4)      # points available per chromosome row
+    draw_numt_landscape(ax1, loci, chrom_lengths, label_fontsize=max(4.0, min(6.0, 0.8 * row_pt)))
     sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(75, 100)); cb = fig.colorbar(sm, ax=ax1, fraction=0.02, pad=0.01)
     cb.set_label("identity to mtDNA (%)", fontsize=6); cb.ax.tick_params(labelsize=5)
     draw_numt_catalog(ax2, loci, L, gff)
-    for letter, ax in zip("abcd", (ax0, ax_sz, ax1, ax2)):
-        ax.text(-0.02 if ax is not ax_sz else -0.08, 1.0, letter, transform=ax.transAxes, fontsize=10, fontweight="bold", va="bottom", ha="right")
+    for letter, ax in zip("abcd", (ax0, ax_sz, ax1, ax2)):        # panel letters in the page margin, clear of titles and tick labels
+        box = ax.get_position()
+        fig.text(max(0.012, box.x0 - 0.085), min(0.985, box.y1 + 0.006), letter, fontsize=10, fontweight="bold", va="bottom", ha="left")
     outs = []
     for ff in fileforms:
-        p = Path(f"{out_base}.{ff}"); fig.savefig(p, dpi=dpi, bbox_inches="tight", pad_inches=0.15); outs.append(p)
+        p = Path(f"{out_base}.{ff}"); fig.savefig(p, dpi=dpi); outs.append(p)
     plt.close(fig)
     return outs
 

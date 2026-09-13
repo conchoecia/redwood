@@ -41,7 +41,7 @@ Outputs: `numts.loci.tsv` (locus, chromosome, coordinates, span, mitogenome inte
 `numts.landscape.png` (chromosomes with loci coloured by identity), `numts.catalog.png` (loci over the mitogenome at their
 identity, pieces of one locus joined by a dotted line), `numts.sizes.png` (mtDNA content per locus against the class
 thresholds: `full-length` >= 95 % of the molecule, `large` >= 5 kb, otherwise `fragment`), and with `--figure` the composite
-letter-proportioned figure (a circular map, b class panel, c landscape, d catalogue). `redwood plot --numt-loci numts.loci.tsv
+one-page figure, 6.5 x 9 in to fit the text area of letter paper (a circular map, b class panel, c landscape, d catalogue). `redwood plot --numt-loci numts.loci.tsv
 --circular-read-classes numts.read_classes.tsv` adds the NUMT ring and colours reads by class on the circular map.
 
 **Before cataloguing, remove mitochondrial scaffolds from the nuclear assembly** (a standalone scaffold that is a jumble of

@@ -257,8 +257,9 @@ Figures: `numts.landscape.png` (chromosomes with loci coloured by identity to th
 locus are joined by a dotted line), `numts.sizes.png` (one bar per locus of the mitochondrial sequence it carries, on an axis
 spanning the whole mitogenome, with the `large` and `full-length` thresholds drawn: this panel is what the classes mean, a
 class is the mtDNA content of the whole locus and not the size of any one piece) and, with `--figure`, one composite
-letter-proportioned page: circular map (a) and the class panel (b) on top, landscape (c) and catalogue (d) across the full
-width below. On the circular map, `redwood plot --numt-loci
+page of exactly 6.5 x 9 in (the text area of letter paper with 1-inch margins, so it prints as is and drops into a Word or
+Google document at full text width): circular map (a) and the class panel (b) on top, landscape (c) and catalogue (d) across
+the full width below. On the circular map, `redwood plot --numt-loci
 numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
 numts.read_classes.tsv` colours reads by class (NUMT junction reads red, chimeras purple, nuclear grey).
 `AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.

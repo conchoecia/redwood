@@ -132,7 +132,7 @@ def test_numt_figures_render(synthetic, tmp_path):
     plt.close(fig)
 
 
-def test_composite_figure_is_letter_proportioned(synthetic, tmp_path):
+def test_composite_figure_is_a_fixed_letter_text_area_page(synthetic, tmp_path):
     from matplotlib.image import imread
 
     d, mito, lengths = synthetic
@@ -143,7 +143,8 @@ def test_composite_figure_is_letter_proportioned(synthetic, tmp_path):
     outs = plot_composite_figure(mito_fasta=tmp_path / "mito.fa", loci=rows, chrom_lengths=lengths, out_base=tmp_path / "composite", dpi=40, fileforms=("png",))
     assert outs[0].exists()
     h, w = imread(outs[0]).shape[:2]
-    assert 1.15 <= h / w <= 1.45, f"composite page ratio {h / w:.2f} is not letter-like"
+    # the page is exactly 6.5 x 9 in (the text area of letter paper with 1-inch margins); nothing may grow or crop it
+    assert (w, h) == (260, 360), f"composite is {w / 40:.2f} x {h / 40:.2f} in, expected 6.5 x 9"
 
 
 @pytest.mark.skipif(not (HAVE_MM2 and shutil.which("samtools")), reason="needs minimap2 and samtools")
