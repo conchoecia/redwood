@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 from pathlib import Path
 
@@ -448,6 +449,57 @@ def add_rnaseq_depth_track(
     )
 
 
+_NAME_SUFFIX = re.compile(r"\s+(CDS|gene|mRNA|exon|rRNA|tRNA)\b.*$", re.IGNORECASE)
+_NAME_PARTIAL = re.compile(r"\s*\(?\s*(?:[35]'\s*)?partial\b.*$", re.IGNORECASE)
+_AA3 = {
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G",
+    "His": "H", "Ile": "I", "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S",
+    "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V", "Sec": "U", "Pyl": "O",
+}
+
+
+def clean_feature_name(name: str) -> str:
+    """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...)."""
+    name = name.strip()
+    name = _NAME_PARTIAL.sub("", name)
+    name = _NAME_SUFFIX.sub("", name)
+    return name.strip() or "feature"
+
+
+def trna_short_label(name: str) -> str:
+    """'tRNA-Ser2' -> 'S2', 'tRNA-Leu(UUR)' -> 'L', 'trnK' -> 'K', 'tRNA_Asn' -> 'N'; unknown names pass through."""
+    match = re.search(r"(?:tRNA|trn)[-_ ]?([A-Z][a-z]{2})(\d*)", name)
+    if match and match.group(1) in _AA3:
+        return _AA3[match.group(1)] + match.group(2)
+    match = re.search(r"^trn([A-Z])(\d*)", name)
+    if match:
+        return match.group(1) + match.group(2)
+    return name
+
+
+def collapse_locus_features(features: list[dict[str, object]]) -> list[dict[str, object]]:
+    """GFF3 describes one locus with several records (gene + mRNA + CDS, gene + tRNA, ...).
+    Keep the most specific record per locus (CDS / tRNA / rRNA), and drop a 'gene'/'mRNA'/'exon'
+    record when a specific record with the same name overlaps it or shares its coordinates."""
+    specific = [f for f in features if str(f["type"]) in {"CDS", "tRNA", "rRNA"}]
+    kept = list(specific)
+    for feature in features:
+        ftype = str(feature["type"])
+        if ftype in {"CDS", "tRNA", "rRNA"}:
+            continue
+        if ftype == "exon":
+            continue
+        start, stop, name = int(feature["start"]), int(feature["stop"]), str(feature["name"]).lower()
+        covered = any(
+            (int(g["start"]) == start and int(g["stop"]) == stop)
+            or (str(g["name"]).lower() == name and int(g["start"]) < stop and start < int(g["stop"]))
+            for g in specific
+        )
+        if not covered:
+            kept.append(feature)
+    return kept
+
+
 def parse_gff(path: Path | None) -> list[dict[str, object]]:
     if path is None or not path.exists():
         return []
@@ -462,20 +514,24 @@ def parse_gff(path: Path | None) -> list[dict[str, object]]:
         if feat_type in {"region", "source"}:
             continue
         name = feat_type
-        for attr in attrs.split(";"):
-            if attr.startswith("Name="):
-                name = attr.split("=", 1)[1]
-                break
+        for key in ("Name=", "gene=", "product=", "ID="):
+            for attr in attrs.split(";"):
+                if attr.startswith(key):
+                    name = attr.split("=", 1)[1]
+                    break
+            else:
+                continue
+            break
         features.append(
             {
                 "type": feat_type,
                 "start": int(start) - 1,
                 "stop": int(stop),
                 "strand": strand,
-                "name": name,
+                "name": clean_feature_name(name),
             }
         )
-    return features
+    return collapse_locus_features(features)
 
 
 def assign_annotation_lanes(features: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -501,33 +557,79 @@ def assign_annotation_lanes(features: list[dict[str, object]]) -> list[dict[str,
     return annotated
 
 
-def add_feature_label(ax, feature: dict[str, object], length: int, radius: float, color: str) -> None:
+def units_per_point(ax) -> float:
+    """Data units per typographic point along the x axis (the plot is square with equal aspect)."""
+    fig = ax.figure
+    width_in = fig.get_size_inches()[0] * ax.get_position().width
+    return (2 * PLOT_LIMIT) / (width_in * 72.0)
+
+
+def label_width_units(ax, text: str, fontsize: float) -> float:
+    return len(text) * fontsize * 0.66 * units_per_point(ax)
+
+
+def add_feature_label(
+    ax,
+    feature: dict[str, object],
+    length: int,
+    radius: float,
+    color: str,
+    *,
+    outer_radius: float | None = None,
+    outer_color: str | None = None,
+    label_text: str | None = None,
+    fontsize: float = 5.0,
+    min_fontsize: float = 3.6,
+    prefer_outside: bool = False,
+) -> None:
+    """Label a feature. The name is written along the arc when it fits (shrinking the font down to
+    ``min_fontsize`` first); otherwise, when ``outer_radius`` is given, it is written radially just
+    outside the outer track with a short leader in the feature colour, so short genes and tRNAs
+    keep their labels instead of being dropped. ``prefer_outside`` skips the along-arc attempt
+    (used for tRNAs, whose arcs are too thin to carry readable text)."""
     start = int(feature["start"])
     stop = int(feature["stop"])
     span = stop - start
-    if feature["type"] == "tRNA" or span < 340:
-        return
-    name = str(feature["name"])
-    if not name or len(name) > 14:
+    name = label_text if label_text is not None else str(feature["name"])
+    if not name or span <= 0:
         return
     angle = theta(int(start + (span / 2)), length)
-    x, y = polar_xy(radius, angle)
     rotation = angle - 90
     if 90 < angle < 270:
         rotation += 180
-    ax.text(
-        x,
-        y,
-        name,
-        ha="center",
-        va="center",
-        color=color,
-        fontsize=5.0,
-        rotation=rotation,
-        rotation_mode="anchor",
-        fontweight="bold",
-        zorder=5,
-    )
+    arc_units = (span / length) * 2 * np.pi * radius
+    size = fontsize if not (prefer_outside and outer_radius is not None) else min_fontsize - 1
+    while size >= min_fontsize:
+        if label_width_units(ax, name, size) <= arc_units * 0.92:
+            x, y = polar_xy(radius, angle)
+            ax.text(x, y, name, ha="center", va="center", color=color, fontsize=size, rotation=rotation,
+                    rotation_mode="anchor", fontweight="bold", zorder=5)
+            return
+        size -= 0.4
+    if outer_radius is None:
+        return
+    # Radial label outside the outer track, reading outward; leader from the track edge.
+    # Neighbouring labels (e.g. tRNA clusters) are staggered outward so they do not overprint.
+    size = max(min_fontsize, fontsize - 0.8)
+    placed = getattr(ax, "_redwood_outer_labels", None)
+    if placed is None:
+        placed = []
+        ax._redwood_outer_labels = placed
+    min_sep = size * units_per_point(ax) * 1.3 / max(outer_radius, 1e-6) * (180 / np.pi)  # degrees
+    tier = 0
+    while any(abs(((angle - a + 180) % 360) - 180) < min_sep and t == tier for a, t in placed):
+        tier += 1
+    placed.append((angle, tier))
+    step = label_width_units(ax, name, size) + 0.012
+    base = outer_radius + tier * step
+    lead0 = polar_xy(outer_radius - 0.010, angle)
+    lead1 = polar_xy(base + 0.004, angle)
+    ax.plot([lead0[0], lead1[0]], [lead0[1], lead1[1]], color=str(feature.get("color", color)), lw=0.6, alpha=0.9, zorder=5)
+    x, y = polar_xy(base + 0.008, angle)
+    radial = angle if angle <= 90 or angle > 270 else angle + 180
+    ha = "left" if angle <= 90 or angle > 270 else "right"
+    ax.text(x, y, name, ha=ha, va="center", color=outer_color or color, fontsize=size,
+            rotation=radial, rotation_mode="anchor", fontweight="bold", zorder=5)
 
 
 def choose_position_label_step(length: int, max_degrees: float = 60.0) -> int:
@@ -631,6 +733,8 @@ def draw_circular_plot(
     wrap_ramp: float = 0.12,
     multipass: bool = True,
     min_indel: int = 10,
+    trna_labels: str = "letter",
+    feature_labels: bool = True,
 ) -> None:
     fg = "#eef4fb" if dark else "#111827"
     rna_forward = "#b6906a" if dark else BARK_COLOR
@@ -658,8 +762,11 @@ def draw_circular_plot(
         style=rnaseq_style,
     )
 
+    has_rnaseq = rnaseq_forward is not None and np.max(rnaseq_forward + rnaseq_reverse) > 0
+    outer_radius = 1.178 if has_rnaseq else 1.118
     for feature in assign_annotation_lanes(parse_gff(gff)):
         color = FEATURE_COLORS.get(str(feature["type"]), "#d08c35")
+        feature["color"] = color
         if feature["type"] == "tRNA":
             add_arc(
                 ax,
@@ -672,6 +779,11 @@ def draw_circular_plot(
                 alpha=0.95,
                 linewidth=0,
             )
+            if trna_labels != "none":
+                text = trna_short_label(str(feature["name"])) if trna_labels == "letter" else str(feature["name"])
+                add_feature_label(ax, feature, length, 1.094, label_color, outer_radius=outer_radius,
+                                  outer_color=fg, label_text=text, fontsize=4.6, min_fontsize=3.8,
+                                  prefer_outside=True)
             continue
         radius = 1.030 + (float(feature.get("lane", 0)) * 0.048)
         width = 0.046
@@ -685,7 +797,9 @@ def draw_circular_plot(
             str(feature["strand"]),
             color,
         )
-        add_feature_label(ax, feature, length, radius - (width / 2), label_color)
+        if feature_labels:
+            add_feature_label(ax, feature, length, radius - (width / 2), label_color,
+                              outer_radius=outer_radius, outer_color=fg)
 
     if reference:
         add_at_track(ax, reference, 0.918, 0.954)
@@ -786,6 +900,8 @@ def plot_file(
     wrap_ramp: float = 0.12,
     multipass: bool = True,
     min_indel: int = 10,
+    trna_labels: str = "letter",
+    feature_labels: bool = True,
 ) -> None:
     bg = "#0d1117" if dark else "#ffffff"
     edge = "#303946" if dark else "#d8dee8"
@@ -814,6 +930,8 @@ def plot_file(
         wrap_ramp=wrap_ramp,
         multipass=multipass,
         min_indel=min_indel,
+        trna_labels=trna_labels,
+        feature_labels=feature_labels,
     )
     fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
     print_images(
@@ -862,6 +980,8 @@ def run_plot(args) -> None:
         wrap_ramp=getattr(args, "wrap_ramp", 0.12),
         multipass=not getattr(args, "no_multipass", False),
         min_indel=getattr(args, "min_indel", 10),
+        trna_labels=getattr(args, "trna_labels", "letter"),
+        feature_labels=not getattr(args, "no_feature_labels", False),
     )
 
 

@@ -159,6 +159,19 @@ def build_parser():
     parser_plot.add_argument("--subtitle")
     parser_plot.add_argument("--dark", action="store_true", help="Render using the dark plot theme.")
     parser_plot.add_argument(
+        "--trna-labels",
+        dest="trna_labels",
+        choices=["letter", "name", "none"],
+        default="letter",
+        help="How to label tRNAs: one-letter amino-acid code (default), the full GFF name, or no label.",
+    )
+    parser_plot.add_argument(
+        "--no-feature-labels",
+        dest="no_feature_labels",
+        action="store_true",
+        help="Do not label CDS/rRNA/gene features.",
+    )
+    parser_plot.add_argument(
         "--extra-track",
         dest="extra_tracks",
         choices=["at", "gc", "rnaseq-strand", "metrics"],

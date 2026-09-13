@@ -195,6 +195,18 @@ BibTeX:
 }
 ```
 
+## Annotation track
+
+`--gff` accepts standard GFF3 as written by MitoFinder, MITOS or NCBI: a locus described by
+several records (`gene` + `CDS`, `gene` + `tRNA`, `gene` + `mRNA` + `exon` + `CDS`) is drawn once,
+using the most specific record (CDS / tRNA / rRNA), and annotator suffixes such as
+`COX1 CDS 3' Partial CDS` are trimmed to the gene name. Every feature is labelled: names are
+written along the arc when they fit (the font shrinks first), otherwise radially just outside the
+outer track with a leader line, so short genes (ATP8, ND4L) keep their labels. tRNAs are labelled
+with the one-letter amino-acid code (`S2`, `L2` for the second copies); use `--trna-labels name`
+for the full GFF names, `--trna-labels none` to hide them, and `--no-feature-labels` to hide the
+gene labels.
+
 ## Notes
 
 This repository keeps the original redwood plotting lineage from
