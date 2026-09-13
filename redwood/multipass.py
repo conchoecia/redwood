@@ -157,12 +157,14 @@ def pack_circular_reads(reads, length: int, pad: float = 0.0):
     (outermost) rung where it does not overlap an already-placed read. So the
     longest unplaced read opens each new rung — outer rungs carry the longest
     reads and shorter reads backfill the gaps — rather than producing a
-    start-coordinate cascade. Returns ``(placed, n_rungs)`` where ``placed`` is
-    a list of ``(RegularRead, rung_index)``.
+    start-coordinate cascade. Reads of equal span are ordered by start position,
+    so a set of full-length reads (each on its own rung) forms one clean cascade
+    around the circle. Returns ``(placed, n_rungs)`` where ``placed`` is a list
+    of ``(RegularRead, rung_index)``.
     """
     rungs: list[list] = []          # rungs[i] = list of placed arc-interval sets
     placed: list[tuple] = []
-    for rd in sorted(reads, key=lambda r: -r.span):
+    for rd in sorted(reads, key=lambda r: (-r.span, r.start)):
         ivals = _arc_intervals(rd.start - pad, rd.span + 2 * pad, length)
         for ri, occupied in enumerate(rungs):
             if not any(_intervals_overlap(ivals, o) for o in occupied):

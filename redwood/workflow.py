@@ -626,6 +626,7 @@ def run_end_to_end(args: argparse.Namespace) -> dict[str, object]:
                 extra_tracks=[],
                 read_mismatches=getattr(args, "read_mismatches", "shared"),
                 no_variant_ring=getattr(args, "no_variant_ring", False),
+                no_track_legend=getattr(args, "no_track_legend", False),
                 variant_table=str(outdir / "redwood.variants.long_reads.tsv")
                 if (outdir / "redwood.variants.long_reads.tsv").exists() else None,
                 min_minor_frac=getattr(args, "min_minor_frac", 0.05),

@@ -38,10 +38,12 @@ redwood numts --mito-fasta final.fa --nuclear-fasta nuclear.fa --gff final.gff -
 ```
 Outputs: `numts.loci.tsv` (locus, chromosome, coordinates, span, mitogenome intervals, fraction of the molecule, identity, class),
 `numts.mito_coverage.tsv`, `numts.read_classes.tsv`, `numts.junction_support.tsv`, `reads_vs_mito.PO.bam` (reads tagged `PO:Z`),
-`numts.landscape.png` (chromosomes with loci coloured by identity), `numts.catalog.png` (loci over the mitogenome at their
+`numts.landscape.png` (chromosomes with loci at their true span, widened to a stated minimum when too narrow to see,
+coloured by identity), `numts.catalog.png` (loci over the mitogenome at their
 identity, pieces of one locus joined by a dotted line), `numts.sizes.png` (mtDNA content per locus against the class
 thresholds: `full-length` >= 95 % of the molecule, `large` >= 5 kb, otherwise `fragment`), and with `--figure` the composite
-one-page figure, 6.5 x 9 in to fit the text area of letter paper (a circular map, b class panel, c landscape, d catalogue). `redwood plot --numt-loci numts.loci.tsv
+one-page figure, 6.5 x 9 in to fit the text area of letter paper (a circular map with its ring key, b landscape, c catalogue,
+d class panel). Every circular map carries the ring key (`--no-track-legend` to omit). `redwood plot --numt-loci numts.loci.tsv
 --circular-read-classes numts.read_classes.tsv` adds the NUMT ring and colours reads by class on the circular map.
 
 **Before cataloguing, remove mitochondrial scaffolds from the nuclear assembly** (a standalone scaffold that is a jumble of

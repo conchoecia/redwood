@@ -120,8 +120,17 @@ def test_numt_figures_render(synthetic, tmp_path):
     assert [p.name for p in outs] == ["numts.landscape.png", "numts.catalog.png", "numts.sizes.png"]
     assert all(p.exists() and p.stat().st_size > 0 for p in outs)
     fig, (a1, a2, a3) = plt.subplots(3, 1)
-    draw_numt_landscape(a1, rows, lengths); draw_numt_catalog(a2, rows, 16000); draw_numt_sizes(a3, rows, 16000)
+    draw_numt_landscape(a1, rows, lengths, min_visible_frac=0.05); draw_numt_catalog(a2, rows, 16000); draw_numt_sizes(a3, rows, 16000)
     assert len(a1.patches) == 3 + 2 and len(a2.lines) >= 2
+    # loci are drawn at their true span unless narrower than the visibility minimum (here 5 % of the longest sequence);
+    # the 3 kb fragment is widened to that minimum and the title says so, the 16 kb full-length locus keeps its span
+    min_w = 0.05 * max(lengths.values())
+    widths = sorted(pt.get_width() for pt in a1.patches[3:])
+    assert abs(widths[0] - min_w / 1e6) < 1e-9 and abs(widths[1] - 16000 / 1e6) < 1e-9
+    assert "1 loci narrower than" in a1.get_title(loc="left") and "wider than real" in a1.get_title(loc="left")
+    fig2, a4 = plt.subplots(); draw_numt_landscape(a4, rows, lengths, min_visible_frac=0.0001)
+    assert "narrower" not in a4.get_title(loc="left")          # nothing widened, nothing claimed
+    plt.close(fig2)
     # the class legend states the thresholds, so "fragment / large / full-length" is defined on the figure itself
     legend_text = [t.get_text() for t in a2.get_legend().get_texts()]
     assert legend_text == ["full-length (>= 95 % of mtDNA)", "large (>= 5 kb of mtDNA)", "fragment (< 5 kb of mtDNA)"]

@@ -185,6 +185,8 @@ def build_parser():
                              help="redwood numts read-class TSV: colour read arcs by class (NUMT junction reads red, chimeras purple, ...).")
     parser_plot.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true",
                              help="Do not draw the per-column disagreement ring inside the annotation.")
+    parser_plot.add_argument("--no-track-legend", dest="no_track_legend", action="store_true",
+                             help="Omit the ring key (90-degree cut-out of the track stack drawn to the right of the map).")
     parser_plot.add_argument("--variant-table", dest="variant_table", action=FullPaths,
                              help="Use this redwood variants TSV (e.g. from the whole read set) instead of computing "
                                   "column disagreement from --main-bam.")
@@ -377,6 +379,7 @@ def build_parser():
     parser_run.add_argument("--read-mismatches", dest="read_mismatches", choices=["shared", "all", "none"], default="shared",
                             help="IGV-style mismatch marks on the read rings (see `redwood plot --help`).")
     parser_run.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true")
+    parser_run.add_argument("--no-track-legend", dest="no_track_legend", action="store_true", help="Omit the ring key on the circular plot.")
     parser_run.add_argument("--min-span-fraction", type=float, default=0.25)
     parser_run.add_argument("--exclude-token", action="append", default=[])
     parser_run.add_argument("--plot-name", default="redwood")

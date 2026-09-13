@@ -252,17 +252,26 @@ covers, the fraction of the molecule, identity (total and SNV-only) and class (`
 (`numts.read_classes.tsv`: `mito_only`, `mito_multisegment` = origin-crossing, `mito+nuclear_at_NUMT_locus` = junction read of a
 catalogued NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
 junction are counted (`numts.junction_support.tsv`); `--mito-bam` writes a copy of the mito BAM with the class in a `PO:Z` tag.
-Figures: `numts.landscape.png` (chromosomes with loci coloured by identity to the mtDNA, sized by class), `numts.catalog.png`
+Figures: `numts.landscape.png` (chromosomes with every locus at its true genomic span, widened to a stated minimum when it
+would be invisible; box height = class, colour = identity to the mtDNA), `numts.catalog.png`
 (each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath; the pieces of one
 locus are joined by a dotted line), `numts.sizes.png` (one bar per locus of the mitochondrial sequence it carries, on an axis
 spanning the whole mitogenome, with the `large` and `full-length` thresholds drawn: this panel is what the classes mean, a
 class is the mtDNA content of the whole locus and not the size of any one piece) and, with `--figure`, one composite
 page of exactly 6.5 x 9 in (the text area of letter paper with 1-inch margins, so it prints as is and drops into a Word or
-Google document at full text width): circular map (a) and the class panel (b) on top, landscape (c) and catalogue (d) across
-the full width below. On the circular map, `redwood plot --numt-loci
+Google document at full text width): circular map with its ring key (a) across the top, landscape (b), then catalogue (c)
+beside the class panel (d). On the circular map, `redwood plot --numt-loci
 numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
 numts.read_classes.tsv` colours reads by class (NUMT junction reads red, chimeras purple, nuclear grey).
 `AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.
+
+## Ring key
+
+Every circular plot carries a key to its rings: a 90-degree cut-out of the track stack drawn to the right of the map, in the
+real radial order with the real colours, each band ending beside its label (RNA-seq depth, tRNA genes, CDS / rRNA genes with
+the strand arrow, variant columns, AT content, NUMT loci when `--numt-loci` is given, multi-pass read spirals with their rung
+step, single-pass reads with indel width changes and mismatch dots). Only the layers actually drawn are listed. The figure is
+widened to make room; `--no-track-legend` (plot and run) restores the square map.
 
 ## Notes
 
