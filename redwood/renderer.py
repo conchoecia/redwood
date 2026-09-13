@@ -757,6 +757,8 @@ def add_position_labels(ax, length: int, color: str) -> None:
         x0, y0 = polar_xy(1.172, angle)
         x1, y1 = polar_xy(outer_radius, angle)
         ax.plot([x0, x1], [y0, y1], color=color, lw=0.7 if major else 0.55, alpha=0.62 if major else 0.36)
+        if major and bp and (length - bp) < 0.35 * label_step:
+            continue  # a "N,000 bp" label right next to "0 bp" overprints it
         if major:
             x, y = polar_xy(1.238, angle)
             rotation = angle - 90

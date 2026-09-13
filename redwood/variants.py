@@ -40,6 +40,22 @@ def read_first_sequence(path: Path) -> tuple[str, str]:
     return name, "".join(chunks).upper()
 
 
+def bam_has_base_qualities(bam, contig: str, sample: int = 200) -> bool:
+    """False when the reads carry no base qualities (CLR / some ONT exports write '!' or none), in which
+    case a quality threshold would silently drop every base."""
+    seen = 0
+    for read in bam.fetch(contig):
+        if read.is_unmapped or read.is_secondary:
+            continue
+        q = read.query_qualities
+        if q is not None and len(q) and max(q) > 2:
+            return True
+        seen += 1
+        if seen >= sample:
+            break
+    return False
+
+
 def _keep(read) -> bool:
     return not (read.is_unmapped or read.is_secondary or read.is_qcfail or read.is_duplicate)
 
@@ -77,7 +93,8 @@ def column_variants(
                     f"BAM contig {name} is {ref_len} bp, not a multiple of the reference length {length}; "
                     "map to the single-copy or the doubled reference"
                 )
-            cov = bam.count_coverage(name, 0, ref_len, quality_threshold=min_base_quality, read_callback=_keep)
+            threshold = min_base_quality if bam_has_base_qualities(bam, name) else 0
+            cov = bam.count_coverage(name, 0, ref_len, quality_threshold=threshold, read_callback=_keep)
             for b, arr in zip(BASES, cov):
                 target = base_counts[b]
                 for i, v in enumerate(arr):

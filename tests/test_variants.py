@@ -51,6 +51,21 @@ def test_column_variants_reports_mismatch_insertion_and_deletion(tmp_path):
     assert rows2[10]["major"] == "A" and "mismatch" in rows2[10]["events"] and summary2["mismatch_columns"] == 1
 
 
+def test_reads_without_base_qualities_are_still_counted(tmp_path):
+    header = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"LN": len(REF), "SN": "mt"}]}
+    path = tmp_path / "noqual.bam"
+    with pysam.AlignmentFile(path, "wb", header=header) as out:
+        for i in range(3):
+            a = pysam.AlignedSegment()
+            a.query_name, a.reference_id, a.reference_start, a.mapping_quality = f"r{i}", 0, 0, 60
+            a.cigarstring, a.query_sequence = "60M", REF
+            a.query_qualities = pysam.qualitystring_to_array("!" * 60)   # all zero, as in PacBio CLR fastq
+            out.write(a)
+    pysam.index(str(path))
+    rows, summary = column_variants(path, REF, min_depth=1)
+    assert rows[0]["depth"] == 3 and summary["deletion_columns"] == 0 and summary["mismatch_columns"] == 0
+
+
 def test_column_variants_folds_doubled_reference(tmp_path):
     # read mapped entirely inside the second copy of a doubled reference lands on the same columns
     bam = _bam(tmp_path, "doubled", 2, [("copy1", 0, "60M", REF), ("copy2", 60, "60M", REF[:10] + "A" + REF[11:])])
