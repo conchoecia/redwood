@@ -21,6 +21,8 @@ def test_clean_feature_name_strips_annotator_decorations():
     assert clean_feature_name("rrnL rRNA") == "rrnL"
     assert clean_feature_name("ND1 CDS Partial CDS") == "ND1"
     assert clean_feature_name("  ATP8  ") == "ATP8"
+    assert clean_feature_name("ND4L-2 gene (second copy of the 3817 bp tandem duplication)") == "ND4L-2"
+    assert clean_feature_name("rrnS-frag rRNA (first 196 bp of rrnS)") == "rrnS-frag"
 
 
 def test_trna_short_label():

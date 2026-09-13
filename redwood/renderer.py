@@ -559,6 +559,7 @@ def add_rnaseq_depth_track(
 
 _NAME_SUFFIX = re.compile(r"\s+(CDS|gene|mRNA|exon|rRNA|tRNA)\b.*$", re.IGNORECASE)
 _NAME_PARTIAL = re.compile(r"\s*\(?\s*(?:[35]'\s*)?partial\b.*$", re.IGNORECASE)
+_NAME_PAREN = re.compile(r"\s*\([^()]*\)\s*$")
 _AA3 = {
     "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G",
     "His": "H", "Ile": "I", "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S",
@@ -567,8 +568,10 @@ _AA3 = {
 
 
 def clean_feature_name(name: str) -> str:
-    """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...)."""
+    """Strip annotator decorations (MitoFinder writes 'COX1 CDS 3\' Partial CDS', 'tRNA-Asn gene', ...) and a trailing
+    parenthesised comment, so a descriptive Name never becomes a label that runs off the page."""
     name = name.strip()
+    name = _NAME_PAREN.sub("", name)          # "ND4L-2 gene (second copy of the duplication)" -> "ND4L-2 gene"
     name = _NAME_PARTIAL.sub("", name)
     name = _NAME_SUFFIX.sub("", name)
     return name.strip() or "feature"

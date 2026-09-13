@@ -253,8 +253,12 @@ covers, the fraction of the molecule, identity (total and SNV-only) and class (`
 catalogued NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
 junction are counted (`numts.junction_support.tsv`); `--mito-bam` writes a copy of the mito BAM with the class in a `PO:Z` tag.
 Figures: `numts.landscape.png` (chromosomes with loci coloured by identity to the mtDNA, sized by class), `numts.catalog.png`
-(each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath) and, with `--figure`,
-one composite figure: circular map on top, landscape and catalogue below. On the circular map, `redwood plot --numt-loci
+(each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath; the pieces of one
+locus are joined by a dotted line), `numts.sizes.png` (one bar per locus of the mitochondrial sequence it carries, on an axis
+spanning the whole mitogenome, with the `large` and `full-length` thresholds drawn: this panel is what the classes mean, a
+class is the mtDNA content of the whole locus and not the size of any one piece) and, with `--figure`, one composite
+letter-proportioned page: circular map (a) and the class panel (b) on top, landscape (c) and catalogue (d) across the full
+width below. On the circular map, `redwood plot --numt-loci
 numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
 numts.read_classes.tsv` colours reads by class (NUMT junction reads red, chimeras purple, nuclear grey).
 `AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.

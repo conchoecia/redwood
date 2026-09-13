@@ -15,6 +15,8 @@ from redwood.numts import (
     classify_reads,
     draw_numt_catalog,
     draw_numt_landscape,
+    draw_numt_sizes,
+    plot_composite_figure,
     junction_support,
     merge_loci,
     mito_coverage,
@@ -115,11 +117,33 @@ def test_numt_figures_render(synthetic, tmp_path):
         {"chrom": "chr2", "tstart": 30000, "tend": 33000, "qstart": 4000, "qend": 7000, "strand": "+", "alen": 3000, "identity": 0.995, "identity_snv": 0.995, "snv": 15, "indel": 0, "source": "minimap2"},
     ], 16000)
     outs = plot_numt_figures(rows, 16000, lengths, tmp_path, dpi=50)
+    assert [p.name for p in outs] == ["numts.landscape.png", "numts.catalog.png", "numts.sizes.png"]
     assert all(p.exists() and p.stat().st_size > 0 for p in outs)
-    fig, (a1, a2) = plt.subplots(2, 1)
-    draw_numt_landscape(a1, rows, lengths); draw_numt_catalog(a2, rows, 16000)
+    fig, (a1, a2, a3) = plt.subplots(3, 1)
+    draw_numt_landscape(a1, rows, lengths); draw_numt_catalog(a2, rows, 16000); draw_numt_sizes(a3, rows, 16000)
     assert len(a1.patches) == 3 + 2 and len(a2.lines) >= 2
+    # the class legend states the thresholds, so "fragment / large / full-length" is defined on the figure itself
+    legend_text = [t.get_text() for t in a2.get_legend().get_texts()]
+    assert legend_text == ["full-length (>= 95 % of mtDNA)", "large (>= 5 kb of mtDNA)", "fragment (< 5 kb of mtDNA)"]
+    # one bar per locus on an axis spanning the whole mitogenome, plus the two dashed threshold lines
+    bars = [pt for pt in a3.patches if pt.get_width() > 0]
+    assert len(bars) == 2 and a3.get_xlim() == (0.0, 16.0)
+    assert sorted(round(l.get_xdata()[0], 2) for l in a3.lines if l.get_linestyle() == "--") == [5.0, 15.2]
     plt.close(fig)
+
+
+def test_composite_figure_is_letter_proportioned(synthetic, tmp_path):
+    from matplotlib.image import imread
+
+    d, mito, lengths = synthetic
+    (tmp_path / "mito.fa").write_text(">mt\n" + mito + "\n")
+    rows = merge_loci([
+        {"chrom": "chr1", "tstart": 60000, "tend": 76000, "qstart": 0, "qend": 16000, "strand": "+", "alen": 16000, "identity": 0.97, "identity_snv": 0.97, "snv": 480, "indel": 0, "source": "minimap2"},
+    ], 16000)
+    outs = plot_composite_figure(mito_fasta=tmp_path / "mito.fa", loci=rows, chrom_lengths=lengths, out_base=tmp_path / "composite", dpi=40, fileforms=("png",))
+    assert outs[0].exists()
+    h, w = imread(outs[0]).shape[:2]
+    assert 1.15 <= h / w <= 1.45, f"composite page ratio {h / w:.2f} is not letter-like"
 
 
 @pytest.mark.skipif(not (HAVE_MM2 and shutil.which("samtools")), reason="needs minimap2 and samtools")

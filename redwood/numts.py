@@ -15,7 +15,8 @@ reads look like a divergent mitochondrial haplotype). This module
   nuclear locus) and ``nuclear_only``;
 * counts reads spanning each nuclear-mitochondrial junction in a single alignment (junction support);
 * draws the NUMT landscape (chromosomes with loci coloured by identity), the NUMT-versus-mitogenome catalogue (which part of the
-  molecule each locus covers, at what identity) and a composite figure (circular map on top, landscape and catalogue below).
+  molecule each locus covers, at what identity), the per-locus mtDNA-content panel that defines the classes, and a composite
+  letter-proportioned figure (circular map and class panel on top, landscape and catalogue across the full width).
 """
 
 from __future__ import annotations
@@ -266,8 +267,18 @@ def _identity_color(ident: float, lo: float = 0.75):
     return plt.get_cmap("viridis")((max(lo, min(1.0, ident)) - lo) / (1 - lo))
 
 
+NUMT_CLASS_COLORS = {"full-length": "#d62728", "large": "#ff7f0e", "fragment": "#1f77b4"}
+
+
+def class_labels(full_length: float = 0.95, large_bp: int = 5000) -> dict[str, str]:
+    """Legend text that states what the locus classes mean: how much of the mitogenome one locus carries."""
+    kb = f"{large_bp / 1000:g}"
+    return {"full-length": f"full-length (>= {full_length * 100:g} % of mtDNA)", "large": f"large (>= {kb} kb of mtDNA)",
+            "fragment": f"fragment (< {kb} kb of mtDNA)"}
+
+
 def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, max_chroms: int = 40, min_chrom_bp: int = 0,
-                        title: str | None = None) -> None:
+                        title: str | None = None, label_fontsize: float | None = None) -> None:
     # show the long sequences (>= min_chrom_bp, default 2 % of the longest) plus every sequence that carries a locus
     if not min_chrom_bp and chrom_lengths:
         min_chrom_bp = int(0.02 * max(chrom_lengths.values()))
@@ -275,6 +286,8 @@ def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, 
     chroms = [c for c, l in sorted(chrom_lengths.items(), key=lambda kv: -kv[1]) if l >= min_chrom_bp or c in with_loci][:max_chroms]
     chroms = sorted(chroms, key=lambda c: -chrom_lengths[c])
     index = {c: i for i, c in enumerate(chroms)}
+    if label_fontsize is None:
+        label_fontsize = 6 if len(chroms) <= 28 else 5
     for c in chroms:
         ax.add_patch(Rectangle((0, index[c] - 0.3), chrom_lengths[c] / 1e6, 0.6, fc="#e5e5e5", ec="#999", lw=0.5))
     shown = 0
@@ -285,22 +298,61 @@ def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, 
         w = max(0.3, r["span_bp"] / 1e6)
         ax.add_patch(Rectangle((r["start"] / 1e6 - 0.15, index[r["chrom"]] - h / 2), w + 0.15, h, fc=_identity_color(r["identity"]),
                                ec="k" if r["class"] == "full-length" else "none", lw=0.8, zorder=3))
-    ax.set_yticks(range(len(chroms))); ax.set_yticklabels(chroms, fontsize=6)
+    ax.set_yticks(range(len(chroms))); ax.set_yticklabels(chroms, fontsize=label_fontsize)
     ax.set_ylim(-0.7, len(chroms) - 0.3); ax.set_xlim(0, max(chrom_lengths[c] for c in chroms) / 1e6 * 1.02 if chroms else 1)
     ax.set_xlabel("position (Mb)", fontsize=7); ax.tick_params(axis="x", labelsize=6); ax.invert_yaxis()
     n = collections.Counter(r["class"] for r in loci)
-    ax.set_title(title or f"NUMT landscape: {len(loci)} loci ({n.get('full-length', 0)} full-length, {n.get('large', 0)} >= 5 kb, "
-                 f"{n.get('fragment', 0)} fragments); {shown} shown on {len(chroms)} sequences", fontsize=7)
+    ax.set_title(title or f"NUMT landscape: {len(loci)} loci ({n.get('full-length', 0)} full-length, {n.get('large', 0)} large, "
+                 f"{n.get('fragment', 0)} fragments; box height = class, colour = identity); {shown} shown on {len(chroms)} sequences",
+                 fontsize=7)
     for s in ax.spines.values(): s.set_visible(False)
 
 
-def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None = None, *, title: str | None = None) -> None:
-    """Each locus as horizontal segments over the mitogenome coordinates it covers, at y = identity, coloured by class."""
-    cc = {"full-length": "#d62728", "large": "#ff7f0e", "fragment": "#1f77b4"}
+def draw_numt_sizes(ax, loci: list[dict], mito_length: int, *, full_length: float = 0.95, large_bp: int = 5000,
+                    title: str | None = None, legend: bool = True) -> None:
+    """Every locus as one bar of the mitochondrial sequence it carries, ranked, on an axis that spans the whole mitogenome.
+
+    This is the panel that defines the classes: a bar reaching the dashed ``full-length`` line is a whole-mitogenome insertion, a
+    bar past the ``large`` line carries >= ``large_bp`` of mtDNA (possibly as several pieces), everything shorter is a fragment.
+    """
+    rows = sorted(loci, key=lambda r: -r["mito_bp"])
+    n = len(rows); L = mito_length / 1000
+    for i, r in enumerate(rows):
+        ax.barh(i, r["mito_bp"] / 1000, height=0.8 if n <= 60 else 1.0, color=NUMT_CLASS_COLORS[r["class"]], ec="none", zorder=3)
+    labels = class_labels(full_length, large_bp)
+    for x, txt, col in ((large_bp / 1000, "large", NUMT_CLASS_COLORS["large"]), (full_length * L, "full-length", NUMT_CLASS_COLORS["full-length"])):
+        ax.axvline(x, color=col, lw=0.8, ls="--", zorder=2)
+        ax.text(x, (n - 1) / 2, f"{txt} threshold ", color=col, fontsize=5.5, ha="right", va="center", rotation=90, zorder=4,
+                bbox=dict(fc="white", ec="none", pad=0.4, alpha=0.85))
+    ax.set_xlim(0, L); ax.set_ylim(n - 0.4, -0.6)
+    ax.set_yticks([]); ax.set_ylabel(f"{n} NUMT loci, ranked by mtDNA content", fontsize=7)
+    ax.set_xlabel("mtDNA in the locus (kb)", fontsize=7); ax.tick_params(axis="x", labelsize=6)
+    top = ax.secondary_xaxis("top", functions=(lambda x: x / L * 100 if L else x, lambda p: p * L / 100 if L else p))
+    top.set_xlabel("% of the mitogenome", fontsize=6); top.tick_params(labelsize=5)
+    if legend:
+        for cls, col in NUMT_CLASS_COLORS.items():
+            ax.add_patch(Rectangle((0, 0), 0, 0, fc=col, ec="none", label=labels[cls]))
+        ax.legend(fontsize=5.5, loc="lower right", frameon=False, handlelength=1.2)
+    ax.set_title(title or "mtDNA content per locus (class thresholds)", fontsize=7)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+
+
+def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None = None, *, title: str | None = None,
+                      full_length: float = 0.95, large_bp: int = 5000) -> None:
+    """Each locus as horizontal segments over the mitogenome coordinates it covers, at y = identity, coloured by class.
+
+    A locus that covers the mitogenome in several pieces (typical for ``large`` loci: the pieces are joined by a dotted line) keeps
+    one identity and one class; the class is its total mitochondrial content, not the size of any one piece.
+    """
+    cc = NUMT_CLASS_COLORS
     for r in loci:
-        for s, e in r["intervals"]:
-            ax.plot([s / 1000, e / 1000], [r["identity"] * 100] * 2, color=cc[r["class"]], lw=2.2 if r["class"] != "fragment" else 1.2,
-                    solid_capstyle="butt", alpha=0.9)
+        y = r["identity"] * 100; iv = sorted(r["intervals"])
+        if len(iv) > 1:
+            ax.plot([iv[0][0] / 1000, iv[-1][1] / 1000], [y, y], color=cc[r["class"]], lw=0.6, ls=":", alpha=0.7, zorder=2)
+        for s, e in iv:
+            ax.plot([s / 1000, e / 1000], [y, y], color=cc[r["class"]], lw=2.4 if r["class"] != "fragment" else 1.2,
+                    solid_capstyle="butt", alpha=0.9, zorder=3)
     ax.set_xlim(0, mito_length / 1000); ax.set_ylabel("identity to mtDNA (%)", fontsize=7); ax.set_xlabel("mitogenome position (kb)", fontsize=7)
     ax.tick_params(labelsize=6)
     lo = min([r["identity"] * 100 for r in loci] + [95]); ax.set_ylim(max(60, lo - 3), 100.5)
@@ -310,11 +362,12 @@ def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None =
         for f in parse_gff(Path(gff)):
             ax.add_patch(Rectangle((int(f["start"]) / 1000, y0), (int(f["stop"]) - int(f["start"])) / 1000, 1.2,
                                    fc=FEATURE_COLORS.get(str(f["type"]), "#d08c35"), ec="none", clip_on=False))
+    labels = class_labels(full_length, large_bp)
     for cls, col in cc.items():
-        ax.plot([], [], color=col, lw=2, label=cls)
-    ax.legend(fontsize=6, loc="lower right", frameon=False, ncol=3)
-    n = collections.Counter(r["class"] for r in loci)
-    ax.set_title(title or f"NUMT catalogue: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mitochondrial sequence in the nuclear genome", fontsize=7)
+        ax.plot([], [], color=col, lw=2, label=labels[cls])
+    ax.legend(fontsize=6, loc="lower right", frameon=False, ncol=3, columnspacing=1.0, handlelength=1.5)
+    ax.set_title(title or f"NUMT catalogue: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mitochondrial sequence in the nuclear genome"
+                 " (class = mtDNA content of the whole locus; dotted = pieces of one locus)", fontsize=7)
 
 
 def plot_numt_figures(loci: list[dict], mito_length: int, chrom_lengths: dict[str, int], outdir: Path, gff: Path | None = None,
@@ -329,32 +382,40 @@ def plot_numt_figures(loci: list[dict], mito_length: int, chrom_lengths: dict[st
     fig, ax = plt.subplots(figsize=(7.5, 3)); draw_numt_catalog(ax, loci, mito_length, gff)
     fig.savefig(outdir / "numts.catalog.png", dpi=dpi, bbox_inches="tight"); fig.savefig(outdir / "numts.catalog.pdf", bbox_inches="tight"); plt.close(fig)
     outs.append(outdir / "numts.catalog.png")
+    fig, ax = plt.subplots(figsize=(3.2, max(2.5, min(6.0, 0.05 * len(loci) + 1.2)))); draw_numt_sizes(ax, loci, mito_length)
+    fig.savefig(outdir / "numts.sizes.png", dpi=dpi, bbox_inches="tight"); fig.savefig(outdir / "numts.sizes.pdf", bbox_inches="tight"); plt.close(fig)
+    outs.append(outdir / "numts.sizes.png")
     return outs
 
 
 def plot_composite_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: dict[str, int], out_base: Path, gff: Path | None = None,
                           main_bam: Path | None = None, rnaseq_bam: Path | None = None, variant_table: Path | None = None,
-                          title: str | None = None, dpi: int = 300, fileforms=("png", "pdf"), **circular_kwargs) -> list[Path]:
-    """One figure per mitogenome: redwood circular map on top, NUMT landscape and NUMT catalogue below."""
+                          title: str | None = None, dpi: int = 300, fileforms=("png", "pdf"), page: tuple[float, float] = (8.5, 11.0),
+                          **circular_kwargs) -> list[Path]:
+    """One page per mitogenome, in letter proportions by default: the redwood circular map (a) with the per-locus mtDNA-content
+    panel that defines the NUMT classes beside it (b), then the NUMT landscape (c) and the NUMT catalogue (d) across the full width."""
     from .renderer import draw_circular_plot, read_reference
     reference = read_reference(Path(mito_fasta)); L = len(reference)
-    nchrom = min(40, len(chrom_lengths)); h_land = max(2.2, 0.14 * nchrom + 0.8)
-    fig = plt.figure(figsize=(7.2, 7.2 + h_land + 2.6))
-    gs = fig.add_gridspec(3, 1, height_ratios=[7.2, h_land, 2.4], hspace=0.25)
-    ax0 = fig.add_subplot(gs[0]); ax1 = fig.add_subplot(gs[1]); ax2 = fig.add_subplot(gs[2])
+    nchrom = min(40, len(chrom_lengths)); h_land = min(3.0, max(1.8, 0.11 * nchrom + 0.7))
+    w, h = page
+    fig = plt.figure(figsize=(w, h))
+    gs = fig.add_gridspec(3, 2, width_ratios=[5.4, 2.6], height_ratios=[5.4, h_land, 2.0], hspace=0.38, wspace=0.30,
+                          left=0.07, right=0.97, top=0.965, bottom=0.05)
+    ax0 = fig.add_subplot(gs[0, 0]); ax_sz = fig.add_subplot(gs[0, 1]); ax1 = fig.add_subplot(gs[1, :]); ax2 = fig.add_subplot(gs[2, :])
     draw_circular_plot(ax0, length=L, reference=reference, gff=Path(gff) if gff else None, main_bam=Path(main_bam) if main_bam else None,
                        rnaseq_bam=Path(rnaseq_bam) if rnaseq_bam else None, variant_table=Path(variant_table) if variant_table else None,
                        title=title, **circular_kwargs)
     for s in ax0.spines.values(): s.set_visible(False)
+    draw_numt_sizes(ax_sz, loci, L)
     draw_numt_landscape(ax1, loci, chrom_lengths)
-    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(75, 100)); cb = fig.colorbar(sm, ax=ax1, fraction=0.03, pad=0.01)
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(75, 100)); cb = fig.colorbar(sm, ax=ax1, fraction=0.02, pad=0.01)
     cb.set_label("identity to mtDNA (%)", fontsize=6); cb.ax.tick_params(labelsize=5)
     draw_numt_catalog(ax2, loci, L, gff)
-    for i, ax in enumerate((ax0, ax1, ax2)):
-        ax.text(-0.02, 1.0, "abc"[i], transform=ax.transAxes, fontsize=10, fontweight="bold", va="bottom", ha="right")
+    for letter, ax in zip("abcd", (ax0, ax_sz, ax1, ax2)):
+        ax.text(-0.02 if ax is not ax_sz else -0.08, 1.0, letter, transform=ax.transAxes, fontsize=10, fontweight="bold", va="bottom", ha="right")
     outs = []
     for ff in fileforms:
-        p = Path(f"{out_base}.{ff}"); fig.savefig(p, dpi=dpi, bbox_inches="tight"); outs.append(p)
+        p = Path(f"{out_base}.{ff}"); fig.savefig(p, dpi=dpi, bbox_inches="tight", pad_inches=0.15); outs.append(p)
     plt.close(fig)
     return outs
 
