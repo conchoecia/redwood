@@ -97,7 +97,7 @@ def test_short_features_and_trnas_get_labels():
     add_feature_label(ax, _feature("tRNA", 1537, 1599, "tRNA-Asn"), length, 1.094, "#fff", outer_radius=1.178,
                       outer_color="#000", label_text=trna_short_label("tRNA-Asn"), fontsize=4.2, min_fontsize=3.4)
     assert "N" in _texts(ax)
-    # without an outer radius a non-fitting label is simply skipped (old behaviour)
+    # without an outer radius a non-fitting label is simply skipped (old behavior)
     add_feature_label(ax, _feature("CDS", 2338, 2497, "ATP8"), length, 1.007, "#fff")
     assert _texts(ax).count("ATP8") == 1
     plt.close(fig)

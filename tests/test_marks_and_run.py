@@ -95,7 +95,7 @@ def test_spiral_reads_carry_marks():
     plt.close(fig)
 
 
-def test_neighbouring_outside_labels_are_staggered():
+def test_neighboring_outside_labels_are_staggered():
     fig, ax = _axes()
     f1 = {"type": "tRNA", "start": 1000, "stop": 1062, "strand": "+", "name": "tRNA-Phe"}
     f2 = {"type": "tRNA", "start": 1070, "stop": 1132, "strand": "+", "name": "tRNA-Glu"}

@@ -200,9 +200,9 @@ BibTeX:
 `--gff` accepts standard GFF3 as written by MitoFinder, MITOS or NCBI: a locus described by
 several records (`gene` + `CDS`, `gene` + `tRNA`, `gene` + `mRNA` + `exon` + `CDS`) is drawn once,
 using the most specific record (CDS / tRNA / rRNA), and annotator suffixes such as
-`COX1 CDS 3' Partial CDS` are trimmed to the gene name. Every feature is labelled: names are
+`COX1 CDS 3' Partial CDS` are trimmed to the gene name. Every feature is labeled: names are
 written along the arc when they fit (the font shrinks first), otherwise radially just outside the
-outer track with a leader line, so short genes (ATP8, ND4L) keep their labels. tRNAs are labelled
+outer track with a leader line, so short genes (ATP8, ND4L) keep their labels. tRNAs are labeled
 with the one-letter amino-acid code (`S2`, `L2` for the second copies); use `--trna-labels name`
 for the full GFF names, `--trna-labels none` to hide them, and `--no-feature-labels` to hide the
 gene labels.
@@ -210,7 +210,7 @@ gene labels.
 ## Mismatches, insertions and deletions
 
 With `--mito-fasta`, the read rings carry IGV-style marks against the reference: a mismatched read
-base in the IGV base colours (A green, C blue, G orange, T red), insertions purple and deletions
+base in the IGV base colors (A green, C blue, G orange, T red), insertions purple and deletions
 black (indels of at least `--min-indel` bp, the same threshold as the width changes). By default
 (`--read-mismatches shared`) a mismatch is marked only at columns where the read population
 disagrees with the reference above `--min-minor-frac` (default 5 %), so haplotype differences,
@@ -237,7 +237,7 @@ redwood variants --mito-fasta mitochondrion.fa --bam reads.bam --output variants
 
 ## NUMTs
 
-`redwood numts` catalogues nuclear copies of the mitogenome, classifies long reads as mitochondrial or NUMT-derived and draws
+`redwood numts` catalogs nuclear copies of the mitogenome, classifies long reads as mitochondrial or NUMT-derived and draws
 the figures a mitogenome paper needs:
 
 ```bash
@@ -250,28 +250,28 @@ fragments); hits within `--merge` bp are one locus. `numts.loci.tsv` lists every
 covers, the fraction of the molecule, identity (total and SNV-only) and class (`full-length` >= 95 % of the molecule, `large` >= 5 kb,
 `fragment`). Reads mapped to nuclear + mitochondrial sequence together are classified by where their segments land
 (`numts.read_classes.tsv`: `mito_only`, `mito_multisegment` = origin-crossing, `mito+nuclear_at_NUMT_locus` = junction read of a
-catalogued NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
+cataloged NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
 junction are counted (`numts.junction_support.tsv`); `--mito-bam` writes a copy of the mito BAM with the class in a `PO:Z` tag.
 Figures: `numts.landscape.png` (chromosomes with every locus at its true genomic span, widened to a stated minimum when it
-would be invisible; box height = class, colour = identity to the mtDNA), `numts.catalog.png`
+would be invisible; box height = class, color = identity to the mtDNA), `numts.catalog.png`
 (each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath; the pieces of one
 locus are joined by a dotted line), `numts.sizes.png` (one bar per locus of the mitochondrial sequence it carries, on an axis
 spanning the whole mitogenome, with the `large` and `full-length` thresholds drawn: this panel is what the classes mean, a
 class is the mtDNA content of the whole locus and not the size of any one piece) and, with `--figure`, one composite
 page of exactly 6.5 x 9 in (the text area of letter paper with 1-inch margins, so it prints as is and drops into a Word or
-Google document at full text width): circular map with its ring key (a) across the top, landscape (b), then catalogue (c)
+Google document at full text width): circular map with its ring key (a) across the top, landscape (b), then catalog (c)
 beside the class panel (d). On the circular map, `redwood plot --numt-loci
 numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
-numts.read_classes.tsv` colours reads by class (NUMT junction reads red, chimeras purple, nuclear grey).
+numts.read_classes.tsv` colors reads by class (NUMT junction reads red, chimeras purple, nuclear gray).
 `AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.
 
 ## Ring key
 
-Every circular plot carries a key to its rings: a 90-degree cut-out of the track stack drawn to the right of the map, in the
-real radial order with the real colours, each band ending beside its label (RNA-seq depth, tRNA genes, CDS / rRNA genes with
+Every circular plot carries a key to its rings: a 90-degree cut-out of the track stack in the bottom-right corner of the map,
+in the real radial order with the real colors, each band ending beside its label (RNA-seq depth, tRNA genes, CDS / rRNA genes with
 the strand arrow, variant columns, AT content, NUMT loci when `--numt-loci` is given, multi-pass read spirals with their rung
 step, single-pass reads with indel width changes and mismatch dots). Only the layers actually drawn are listed. The figure is
-widened to make room; `--no-track-legend` (plot and run) restores the square map.
+widened by the label column; `--no-track-legend` (plot and run) restores the square map.
 
 ## Notes
 

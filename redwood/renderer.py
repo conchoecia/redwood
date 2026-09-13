@@ -36,7 +36,7 @@ FEATURE_COLORS = {
     "tRNA": "#d870a2",
 }
 
-from .numts import CLASS_COLORS  # read-class colours shared with the NUMT module
+from .numts import CLASS_COLORS  # read-class colors shared with the NUMT module
 
 # IGV-style read marks: mismatched read base, insertion, deletion.
 MARK_COLORS = {"A": "#009900", "C": "#0000ff", "G": "#d17105", "T": "#ff0000", "I": "#800080", "D": "#000000"}
@@ -56,11 +56,11 @@ CIGAR_OP_WIDTH = {
 MULTIPASS_RADIUS_FRACTION = 0.40
 
 # Redwood-wood gradient for regular read arcs — dark heartwood at the read's
-# genomic start, through cinnamon, to pale sapwood at its end. The colour
+# genomic start, through cinnamon, to pale sapwood at its end. The color
 # sweep makes read direction visible.
 REDWOOD_GRADIENT = ["#3a1d10", "#9c5a2c", "#d3a878"]
 
-# Tree-anatomy theming: the RNA-seq depth ring is recoloured as bark, and the
+# Tree-anatomy theming: the RNA-seq depth ring is recolored as bark, and the
 # AT-content ring uses a warm YlOrBr colormap — dynamic-range normalized in
 # add_at_track so subtle AT% differences stay readable.
 BARK_COLOR = "#6e4a33"
@@ -137,7 +137,7 @@ def _cigar_width_profile(
     cigar: list[tuple[int, int]], min_indel: int, base_lw: float
 ) -> np.ndarray:
     """Per-reference-base line widths for a multi-pass spiral: ``base_lw`` for
-    matches, thin for deletions, fat for insertions (centred, back-offset by
+    matches, thin for deletions, fat for insertions (centered, back-offset by
     half their length). Indels shorter than ``min_indel`` bp keep the match
     width. Insertions are overlaid last so a following match cannot clobber
     them."""
@@ -192,7 +192,7 @@ def add_spiral_read(
     rung spacing in points (capped at 0.9 pt), so spirals stay distinct lines at any figure size.
     """
     if base_linewidth is None:
-        # never wider than ~60 % of the rung spacing, so neighbouring turns and reads stay separable at any figure size
+        # never wider than ~60 % of the rung spacing, so neighboring turns and reads stay separable at any figure size
         base_linewidth = max(0.25, min(0.9, 0.6 * rung_width / units_per_point(ax)))
     n_steps = max(2, int(points_per_turn * passes) + 1)
     a0 = theta(start_pos, length)
@@ -288,7 +288,7 @@ def add_read_marks(
 
 
 def add_numt_ring(ax, loci: list[dict], length: int, r_in: float, r_out: float, lanes: int = 3) -> int:
-    """Mitogenome intervals that exist as NUMTs in the nuclear genome, one arc per locus interval, coloured by identity
+    """Mitogenome intervals that exist as NUMTs in the nuclear genome, one arc per locus interval, colored by identity
     (viridis, 75-100 %), stacked into ``lanes`` lanes (largest loci outermost)."""
     from .numts import _identity_color
     lane_h = (r_out - r_in) / lanes; drawn = 0
@@ -305,7 +305,7 @@ def add_numt_ring(ax, loci: list[dict], length: int, r_in: float, r_out: float, 
 
 def add_variant_ring(ax, rows: list[dict[str, object]], length: int, r_in: float = 0.958, r_out: float = 0.998) -> int:
     """Per-column disagreement ring: one bar per flagged column, height = minor-allele fraction
-    (full height for columns whose majority differs from the reference), coloured by event."""
+    (full height for columns whose majority differs from the reference), colored by event."""
     half = max(2.0, length / 1400.0)
     drawn = 0
     ax.add_patch(plt.Circle((0, 0), r_in, fill=False, lw=0.3, color="#c8ced8", zorder=1))
@@ -340,7 +340,7 @@ def load_variant_table(path: Path) -> list[dict[str, object]]:
 
 
 def _gradient_color(stops: list[str], frac: float):
-    """Interpolate a multi-stop colour gradient at ``frac`` in [0, 1]."""
+    """Interpolate a multi-stop color gradient at ``frac`` in [0, 1]."""
     frac = min(1.0, max(0.0, frac))
     if len(stops) == 1:
         return stops[0]
@@ -362,12 +362,12 @@ def add_cigar_read(
     gradient: list[str] = REDWOOD_GRADIENT,
     alpha: float = 1.0,
 ) -> None:
-    """Draw one regular read as a CIGAR-aware, gradient-coloured arc.
+    """Draw one regular read as a CIGAR-aware, gradient-colored arc.
 
     Each CIGAR operation is an arc segment whose radial width encodes the
     operation — matches at the nominal width, deletions/skips thin (a
     near-gap), insertions a fat bulge back-offset by half their length — and
-    whose colour follows ``gradient`` from the read's genomic start to its end,
+    whose color follows ``gradient`` from the read's genomic start to its end,
     so read direction is visible. Match ops are subdivided so the gradient
     stays smooth. Insertions/deletions shorter than ``min_indel`` bp are drawn
     as plain match, suppressing small HiFi indel noise. The read is clipped at
@@ -375,7 +375,7 @@ def add_cigar_read(
     """
     centerline = radius - READ_ARC_WIDTH / 2
     total = max(1, min(sum(n for op, n in cigar if op in (0, 2, 3, 7, 8)), length))
-    chunk = max(1, length // 360)   # op subdivision for a smooth colour gradient
+    chunk = max(1, length // 360)   # op subdivision for a smooth color gradient
     ref = start
     drawn = 0  # reference bp drawn so far — clip the read at one full circle
     for op, oplen in cigar:
@@ -700,7 +700,7 @@ def add_feature_label(
 ) -> None:
     """Label a feature. The name is written along the arc when it fits (shrinking the font down to
     ``min_fontsize`` first); otherwise, when ``outer_radius`` is given, it is written radially just
-    outside the outer track with a short leader in the feature colour, so short genes and tRNAs
+    outside the outer track with a short leader in the feature color, so short genes and tRNAs
     keep their labels instead of being dropped. ``prefer_outside`` skips the along-arc attempt
     (used for tRNAs, whose arcs are too thin to carry readable text)."""
     start = int(feature["start"])
@@ -725,7 +725,7 @@ def add_feature_label(
     if outer_radius is None:
         return
     # Radial label outside the outer track, reading outward; leader from the track edge.
-    # Neighbouring labels (e.g. tRNA clusters) are staggered outward so they do not overprint.
+    # Neighboring labels (e.g. tRNA clusters) are staggered outward so they do not overprint.
     size = max(min_fontsize, fontsize - 0.8)
     placed = getattr(ax, "_redwood_outer_labels", None)
     if placed is None:
@@ -833,8 +833,44 @@ def infer_length(reference: str | Path | None, gff: str | Path | None, main_bam:
     raise ValueError("plotting requires --mito-fasta, --gff with circular region, or --main-bam")
 
 
-LEGEND_WIDTH = 1.90   # data units added to the right of the map for the track legend (90-degree cut-out + labels)
-LEGEND_RADIUS = 1.00
+# Ring key geometry, in data units of the map (ring radii run to ~1.18, labels to ~1.27, axes to +/-PLOT_LIMIT).
+KEY_RADIUS = 0.40          # outer radius of the 90-degree cut-out
+KEY_INNER = 0.08           # inner radius (the innermost band starts here)
+KEY_CLEARANCE = 1.30       # nearest point of the cut-out to the map center (clear of rings, ticks and outer labels)
+KEY_LABEL_CHARS = 17       # longest key label, used to reserve room for the label column
+KEY_FONT_RANGE = (3.6, 5.0)
+
+
+def _key_center() -> tuple[float, float]:
+    """Center of the cut-out: at the bottom edge of the plot, as far left as the clearance from the map allows."""
+    cy = -PLOT_LIMIT + 0.03
+    cx = float(np.sqrt(max(0.0, (KEY_CLEARANCE + KEY_RADIUS) ** 2 - cy ** 2)))
+    return cx, cy
+
+
+def _units_per_point_for(ax, xspan: float, yspan: float) -> float:
+    """Data units per point for an equal-aspect axes showing ``xspan`` x ``yspan`` inside its allocated box."""
+    fig = ax.figure
+    pos = ax.get_position()
+    w_in = fig.get_size_inches()[0] * pos.width
+    h_in = fig.get_size_inches()[1] * pos.height
+    return max(xspan / (w_in * 72.0), yspan / (h_in * 72.0))
+
+
+def _key_font(pitch: float, upp: float) -> float:
+    return float(min(KEY_FONT_RANGE[1], max(KEY_FONT_RANGE[0], 0.8 * pitch / upp)))
+
+
+def track_legend_width(ax, n_layers: int = 8) -> float:
+    """Extra x range (data units, right of +PLOT_LIMIT) that the key's label column needs on this axes."""
+    cx, _ = _key_center()
+    pitch = (KEY_RADIUS - KEY_INNER) / max(1, n_layers)
+    width = 0.3
+    for _ in range(6):                                   # the scale depends on the width; converges in a few steps
+        upp = _units_per_point_for(ax, 2 * PLOT_LIMIT + width, 2 * PLOT_LIMIT)
+        right = cx + 0.03 + KEY_LABEL_CHARS * _key_font(pitch, upp) * 0.56 * upp + 0.02
+        width = max(0.0, right - PLOT_LIMIT)
+    return width
 
 
 def track_legend_layers(*, has_rnaseq: bool, has_annotation: bool, has_at: bool, has_variants: bool, has_numts: bool,
@@ -847,38 +883,36 @@ def track_legend_layers(*, has_rnaseq: bool, has_annotation: bool, has_at: bool,
     if has_at: layers.append(("at", "AT content"))
     if has_variants: layers.append(("variants", "variant columns"))
     if has_annotation:
-        layers.append(("genes", "genes: CDS / rRNA"))
+        layers.append(("genes", "CDS / rRNA genes"))
         layers.append(("trna", "tRNA genes"))
     if has_rnaseq: layers.append(("rnaseq", "RNA-seq depth"))
     return layers
 
 
-def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, has_marks: bool = True,
-                     center: tuple[float, float] | None = None, radius: float = LEGEND_RADIUS) -> int:
-    """Draw a 90-degree cut-out of the ring stack as a key, to the right of the map.
+def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, has_marks: bool = True) -> int:
+    """Draw a 90-degree cut-out of the ring stack as a key in the bottom-right corner of the map.
 
-    The wedge opens towards the upper left; its straight vertical edge faces a column of labels, so every band ends
-    next to its own name and no leader line crosses another band. Bands are schematic: uniform widths in the real
-    radial order with the real colours (wood-coloured single-pass reads with indel width changes and mismatch dots,
-    red multi-pass spirals with the rung step, viridis NUMT arcs, the AT colour ramp, variant-ring bars, gene arrows,
-    tRNA blocks and the RNA-seq depth profile). Returns the number of layers drawn."""
+    The cut-out opens towards the map; its straight vertical edge faces a column of labels, so every band ends next to
+    its own name. Bands are schematic, in the real radial order with the real colors: wood-colored single-pass reads with
+    indel width changes and mismatch dots, a multi-pass read as a spiral stepping down one rung per turn, viridis NUMT
+    arcs, the AT color ramp, variant-ring bars, gene blocks with the strand arrow, tRNA blocks and the RNA-seq depth
+    profile. Text is sized to the band pitch (3.6-5 pt). Returns the number of layers drawn."""
     if not layers:
         return 0
     from .multipass import MULTIPASS_COLORS
     fg = "#eef4fb" if dark else "#111827"
     tick = "#9aa8b7" if dark else "#667085"
-    if center is None:
-        center = (PLOT_LIMIT + 1.06, -PLOT_LIMIT + 0.10)
+    center = _key_center()
     cx, cy = center
+    x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
+    upp = _units_per_point_for(ax, abs(x1 - x0), abs(y1 - y0))
     n = len(layers)
-    r0 = 0.18 * radius
-    spacing = (radius - r0) / n
-    band = 0.78 * spacing
-    upp = units_per_point(ax)
-    fontsize = max(3.6, min(6.5, 0.82 * spacing / upp))
-    t1, t2 = 92.0, 178.0                      # angular extent of the cut-out (degrees, counter-clockwise from +x)
+    pitch = (KEY_RADIUS - KEY_INNER) / n
+    band = 0.78 * pitch
+    fontsize = _key_font(pitch, upp)
+    t1, t2 = 91.0, 179.0                      # angular extent of the cut-out (degrees, counter-clockwise from +x)
     rng = np.random.default_rng(7)
-    smooth = np.convolve(rng.random(140), np.ones(9) / 9, mode="same")
+    smooth = np.convolve(rng.random(160), np.ones(9) / 9, mode="same")
 
     def wedge(r_out, r_in, a1, a2, **kw):
         ax.add_patch(Wedge(center, r_out, a1, a2, width=r_out - r_in, linewidth=0, zorder=5, **kw))
@@ -887,61 +921,68 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
         a = np.radians(np.linspace(a1, a2, k))
         return cx + r * np.cos(a), cy + r * np.sin(a)
 
+    def line_width(spacing):                  # never wider than ~55 % of the space between neighboring lines
+        return float(max(0.25, min(0.9, 0.55 * spacing / upp)))
+
     for i, (key, label) in enumerate(layers):
-        r_in = r0 + i * spacing; r_out = r_in + band; mid = (r_in + r_out) / 2
+        r_in = KEY_INNER + i * pitch; r_out = r_in + band; mid = (r_in + r_out) / 2
         if key == "regular":
-            lw = max(0.4, 0.22 * band / upp)
-            for j, (a1, a2) in enumerate(((93, 140), (144, 177), (100, 176))):
-                r = r_out - (0.2 + 0.3 * j) * band
-                x, y = arc_xy(r, a1, a2)
-                ax.plot(x, y, color=REDWOOD_GRADIENT[1 + j % 2], lw=lw, solid_capstyle="butt", zorder=5)
-            # indel detail on the first arc: a fat insertion and a thin deletion; mismatch dots
-            x, y = arc_xy(r_out - 0.2 * band, 112, 118); ax.plot(x, y, color=REDWOOD_GRADIENT[0], lw=lw * 2.0, zorder=6)
-            x, y = arc_xy(r_out - 0.2 * band, 126, 131); ax.plot(x, y, color=REDWOOD_GRADIENT[2], lw=lw * 0.4, zorder=6)
+            spacing = band / 3; lw = line_width(spacing)
+            radii = [r_out - spacing * (0.5 + j) for j in range(3)]
+            for r, (a1, a2), col in zip(radii, ((93, 138), (144, 177), (100, 170)), REDWOOD_GRADIENT):
+                x, y = arc_xy(r, a1, a2); ax.plot(x, y, color=col, lw=lw, solid_capstyle="butt", zorder=5)
+            x, y = arc_xy(radii[0], 110, 117); ax.plot(x, y, color=REDWOOD_GRADIENT[0], lw=lw * 1.5, solid_capstyle="butt", zorder=6)  # insertion
+            x, y = arc_xy(radii[0], 124, 130); ax.plot(x, y, color="white", lw=lw * 0.6, solid_capstyle="butt", zorder=6)              # deletion
             if has_marks:
-                for a, kind in ((103, "T"), (150, "A"), (166, "I")):
-                    x, y = arc_xy(r_out - 0.2 * band, a, a); ax.plot(x, y, marker="o", ms=lw * 1.3, mew=0, color=MARK_COLORS[kind], zorder=7)
+                for r, a, kind in ((radii[0], 100, "T"), (radii[1], 156, "A"), (radii[2], 140, "I")):
+                    x, y = arc_xy(r, a, a, k=1); ax.plot(x, y, marker="o", ms=lw * 1.2, mew=0, color=MARK_COLORS[kind], zorder=7)
         elif key == "multipass":
-            lw = max(0.4, 0.22 * band / upp)
-            for j in range(3):                                           # three rungs of one spiral with the rung step
-                r_a = r_out - (0.15 + 0.35 * j) * band; r_b = r_a - 0.35 * band
-                x, y = arc_xy(r_a, t1 + 1, t2 - 12); ax.plot(x, y, color=MULTIPASS_COLORS[0], lw=lw, zorder=5)
+            # one read spiraling inward: flat along each turn, stepping down one rung over a short ramp. Clockwise travel
+            # (the map's direction) runs from the left edge of the cut-out (179 deg) to the top edge (91 deg).
+            spacing = band / 3; lw = line_width(spacing)
+            levels = [r_out - spacing * (0.5 + j) for j in range(3)]
+            ramp_hi, ramp_lo = 150.0, 124.0
+            for j in range(3):
+                a = np.linspace(t2 - 1, ramp_hi, 20); r = np.full_like(a, levels[j])
                 if j < 2:
-                    a = np.radians(np.linspace(t2 - 12, t2 - 1, 8)); rr = np.linspace(r_a, r_b, 8)
-                    ax.plot(cx + rr * np.cos(a), cy + rr * np.sin(a), color=MULTIPASS_COLORS[0], lw=lw, zorder=5)
+                    a = np.concatenate([a, np.linspace(ramp_hi, ramp_lo, 14)[1:], np.linspace(ramp_lo, t1 + 1, 20)[1:]])
+                    r = np.concatenate([r, np.linspace(levels[j], levels[j + 1], 14)[1:], np.full(19, levels[j + 1])])
+                ax.plot(cx + r * np.cos(np.radians(a)), cy + r * np.sin(np.radians(a)), color=MULTIPASS_COLORS[0], lw=lw,
+                        solid_capstyle="round", solid_joinstyle="round", zorder=5)
         elif key == "numts":
             from .numts import _identity_color
             lane = band / 2
             for (a1, a2, ident, l) in ((94, 118, 0.99, 0), (122, 136, 0.86, 0), (140, 176, 0.93, 0), (100, 150, 0.79, 1)):
                 wedge(r_out - l * lane, r_out - (l + 0.85) * lane, a1, a2, facecolor=_identity_color(ident), alpha=0.95)
         elif key == "at":
-            k = 60; edges = np.linspace(t1, t2, k + 1)
+            k = 44; edges = np.linspace(t1, t2, k + 1)
             for j in range(k):
                 v = AT_RANGE[0] + (AT_RANGE[1] - AT_RANGE[0]) * smooth[j]
-                wedge(r_out, r_in, edges[j], edges[j + 1] + 0.3, facecolor=AT_COLORMAP(v), alpha=0.92)
+                wedge(r_out, r_in, edges[j], edges[j + 1] + 0.4, facecolor=AT_COLORMAP(v), alpha=0.92)
         elif key == "variants":
             x, y = arc_xy(r_in, t1, t2); ax.plot(x, y, color="#c8ced8", lw=0.3, zorder=5)
-            bars = ((96, "mismatch", 1.0), (104, "minor", 0.3), (113, "insertion", 0.5), (121, "minor", 0.2), (131, "deletion", 1.0),
-                    (139, "minor", 0.45), (150, "insertion", 0.7), (158, "mismatch", 1.0), (167, "minor", 0.25), (174, "minor", 0.6))
+            bars = ((96, "mismatch", 1.0), (106, "minor", 0.3), (116, "insertion", 0.5), (126, "minor", 0.2), (136, "deletion", 1.0),
+                    (146, "minor", 0.45), (156, "insertion", 0.7), (166, "mismatch", 1.0), (175, "minor", 0.6))
             for a, kind, frac in bars:
-                wedge(r_in + band * max(0.15, frac), r_in, a - 1.0, a + 1.0, facecolor=VARIANT_RING_COLORS[kind], alpha=0.95)
+                wedge(r_in + band * max(0.15, frac), r_in, a - 1.2, a + 1.2, facecolor=VARIANT_RING_COLORS[kind], alpha=0.95)
         elif key == "genes":
-            wedge(r_out, r_in, 94, 132, facecolor=FEATURE_COLORS["CDS"], alpha=0.95)
-            a = np.radians(133.0); tip = np.radians(139.0)                 # arrowhead of the CDS block (strand)
+            wedge(r_out, r_in, 136, 177, facecolor=FEATURE_COLORS["CDS"], alpha=0.95)
+            a = np.radians(136.0); tip = np.radians(129.0)                 # arrowhead: genes point clockwise, like the map
             ax.add_patch(Polygon([(cx + r_out * np.cos(a), cy + r_out * np.sin(a)), (cx + mid * np.cos(tip), cy + mid * np.sin(tip)),
-                                  (cx + r_in * np.cos(a), cy + r_in * np.sin(a))], closed=True, facecolor=FEATURE_COLORS["CDS"], linewidth=0, zorder=5))
-            wedge(r_out, r_in, 146, 176, facecolor=FEATURE_COLORS["rRNA"], alpha=0.95)
+                                  (cx + r_in * np.cos(a), cy + r_in * np.sin(a))], closed=True, facecolor=FEATURE_COLORS["CDS"],
+                                 linewidth=0, zorder=5))
+            wedge(r_out, r_in, 94, 122, facecolor=FEATURE_COLORS["rRNA"], alpha=0.95)
         elif key == "trna":
-            for a1, a2 in ((97, 104), (118, 125), (141, 148), (163, 170)):
+            for a1, a2 in ((98, 104), (119, 125), (142, 148), (164, 170)):
                 wedge(r_out, r_in, a1, a2, facecolor=FEATURE_COLORS["tRNA"], alpha=0.95)
         elif key == "rnaseq":
-            k = 70; edges = np.linspace(t1, t2, k + 1)
+            k = 50; edges = np.linspace(t1, t2, k + 1)
             for j in range(k):
-                h = band * (0.25 + 0.75 * smooth[j + 40])
-                wedge(r_in + h, r_in, edges[j], edges[j + 1] + 0.3, facecolor=BARK_COLOR if (j // 9) % 2 == 0 else BARK_COLOR_ALT, alpha=0.82)
-        ax.text(cx + 0.045, cy + mid, label, ha="left", va="center", fontsize=fontsize, color=fg, zorder=6)
-    ax.text(cx + 0.045, cy + radius + 0.05, "ring key, outer to inner", ha="left", va="bottom", fontsize=fontsize * 0.92, color=tick, zorder=6)
-    ax.text(cx + 0.045, cy + r0 - 0.06, "centre of the map", ha="left", va="top", fontsize=fontsize * 0.92, color=tick, zorder=6)
+                h = band * (0.25 + 0.75 * smooth[j + 60])
+                wedge(r_in + h, r_in, edges[j], edges[j + 1] + 0.4, facecolor=BARK_COLOR if (j // 7) % 2 == 0 else BARK_COLOR_ALT, alpha=0.82)
+        ax.text(cx + 0.03, cy + mid, label, ha="left", va="center", fontsize=fontsize, color=fg, zorder=6)
+    ax.text(cx + 0.03, cy + KEY_RADIUS + 0.035, "ring key", ha="left", va="bottom", fontsize=fontsize, color=tick,
+            fontweight="bold", zorder=6)
     return n
 
 
@@ -981,7 +1022,7 @@ def draw_circular_plot(
     rnaseq_forward, rnaseq_reverse = strand_depth_profiles(rnaseq_bam, length)
 
     ax.set_aspect("equal")
-    ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT + (LEGEND_WIDTH if track_legend else 0.0))
+    ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT + (track_legend_width(ax) if track_legend else 0.0))
     ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -1141,7 +1182,7 @@ def draw_circular_plot(
             layer_flags["has_regular"] = True
         if class_of:
             x = -0.24
-            for cls, text in (("mito+nuclear_at_NUMT_locus", "NUMT junction read"), ("mito+nuclear_elsewhere", "chimera / uncatalogued NUMT"),
+            for cls, text in (("mito+nuclear_at_NUMT_locus", "NUMT junction read"), ("mito+nuclear_elsewhere", "chimera / uncataloged NUMT"),
                               ("nuclear_only_at_NUMT_locus", "nuclear (NUMT)")):
                 ax.text(x, -0.36, text, ha="left", va="center", fontsize=4.2, color=CLASS_COLORS[cls], zorder=6)
                 x += 0.02 + 0.0058 * len(text)
@@ -1212,8 +1253,10 @@ def plot_file(
     edge = "#303946" if dark else "#d8dee8"
     reference = read_reference(reference_fasta) if reference_fasta else None
     length = infer_length(reference_fasta, gff, main_bam)
-    width = 5.8 * ((2 * PLOT_LIMIT + LEGEND_WIDTH) / (2 * PLOT_LIMIT)) if track_legend else 5.8
-    fig, ax = plt.subplots(figsize=(width, 5.8), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(5.8, 5.8), dpi=dpi)
+    fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
+    if track_legend:       # widen the figure by the key's label column, keeping the map itself the same size
+        fig.set_size_inches(5.8 * (2 * PLOT_LIMIT + track_legend_width(ax)) / (2 * PLOT_LIMIT), 5.8)
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(bg)
     for spine in ax.spines.values():

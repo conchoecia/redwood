@@ -31,7 +31,7 @@ For a linear molecule use `--topology linear` (terminus pileups, soft-clip caps,
 Measure structural features **inside reads** rather than trusting alignments: the distance between two unique anchors flanking a
 repeat array / duplication, measured per read, gives the population's length distribution directly.
 
-## 3. NUMTs: catalogue, classify, plot
+## 3. NUMTs: catalog, classify, plot
 ```
 redwood numts --mito-fasta final.fa --nuclear-fasta nuclear.fa --gff final.gff --long-reads reads.fq.gz \
               --mito-bam rw/long_reads.raw.bam --outdir numts --figure --figure-bam rw/long_reads.redwood.bam
@@ -39,14 +39,14 @@ redwood numts --mito-fasta final.fa --nuclear-fasta nuclear.fa --gff final.gff -
 Outputs: `numts.loci.tsv` (locus, chromosome, coordinates, span, mitogenome intervals, fraction of the molecule, identity, class),
 `numts.mito_coverage.tsv`, `numts.read_classes.tsv`, `numts.junction_support.tsv`, `reads_vs_mito.PO.bam` (reads tagged `PO:Z`),
 `numts.landscape.png` (chromosomes with loci at their true span, widened to a stated minimum when too narrow to see,
-coloured by identity), `numts.catalog.png` (loci over the mitogenome at their
+colored by identity), `numts.catalog.png` (loci over the mitogenome at their
 identity, pieces of one locus joined by a dotted line), `numts.sizes.png` (mtDNA content per locus against the class
 thresholds: `full-length` >= 95 % of the molecule, `large` >= 5 kb, otherwise `fragment`), and with `--figure` the composite
-one-page figure, 6.5 x 9 in to fit the text area of letter paper (a circular map with its ring key, b landscape, c catalogue,
-d class panel). Every circular map carries the ring key (`--no-track-legend` to omit). `redwood plot --numt-loci numts.loci.tsv
---circular-read-classes numts.read_classes.tsv` adds the NUMT ring and colours reads by class on the circular map.
+one-page figure, 6.5 x 9 in to fit the text area of letter paper (a circular map with its ring key, b landscape, c catalog,
+d class panel). Every circular map carries the ring key in its bottom-right corner (`--no-track-legend` to omit). `redwood plot --numt-loci numts.loci.tsv
+--circular-read-classes numts.read_classes.tsv` adds the NUMT ring and colors reads by class on the circular map.
 
-**Before cataloguing, remove mitochondrial scaffolds from the nuclear assembly** (a standalone scaffold that is a jumble of
+**Before cataloging, remove mitochondrial scaffolds from the nuclear assembly** (a standalone scaffold that is a jumble of
 mitogenome copies is the assembler's mito output, not a NUMT; leaving it in makes every mito read "nuclear_only_at_NUMT_locus").
 
 Read classes and how to read them:
@@ -54,8 +54,8 @@ Read classes and how to read them:
 |---|---|
 | `mito_only` | one alignment, entirely on the mitogenome |
 | `mito_multisegment` | two mito segments and nothing else: a read crossing the origin of a circular molecule (or a concatemer / rearrangement; check the join) |
-| `mito+nuclear_at_NUMT_locus` | junction read: mitochondrial segment continues into nuclear sequence at a catalogued NUMT: this read comes from the NUMT |
-| `mito+nuclear_elsewhere` | mito + nuclear at a locus with no catalogued NUMT: an uncatalogued NUMT if many reads share the locus, otherwise a library chimera |
+| `mito+nuclear_at_NUMT_locus` | junction read: mitochondrial segment continues into nuclear sequence at a cataloged NUMT: this read comes from the NUMT |
+| `mito+nuclear_elsewhere` | mito + nuclear at a locus with no cataloged NUMT: an uncataloged NUMT if many reads share the locus, otherwise a library chimera |
 | `nuclear_only_at_NUMT_locus` | the whole read is explained by the nuclear locus: a NUMT read that never left the insertion |
 | `nuclear_only` | bait carry-over (short mito-like hit); ignore |
 
@@ -63,8 +63,8 @@ Read classes and how to read them:
 1. **Flanks first.** Reads with a nuclear flank at a locus are NUMT-derived; count them per locus and confirm the insertion with
    `numts.junction_support.tsv` (reads spanning each junction in one alignment). A "flank" shorter than ~500 bp that maps to a
    short NUMT fragment 98-99 % identical to mtDNA is an alignment artefact, not a flank.
-2. **Reads longer than any NUMT.** If the longest catalogued NUMT is 8 kb and the divergent reads are 15-25 kb of contiguous
-   mitogenome, they are not from a catalogued NUMT. Check for an uncatalogued one via `mito+nuclear_elsewhere` reads clustering
+2. **Reads longer than any NUMT.** If the longest cataloged NUMT is 8 kb and the divergent reads are 15-25 kb of contiguous
+   mitogenome, they are not from a cataloged NUMT. Check for an uncataloged one via `mito+nuclear_elsewhere` reads clustering
    at one locus.
 3. **Origin-crossing reads cannot come from a single-copy nuclear insertion.** If a large fraction of the divergent reads wrap
    around the circle (`mito_multisegment`, end->start joins), they are mitochondrial (a second lineage or heteroplasmy), unless
@@ -86,5 +86,5 @@ Read classes and how to read them:
 ## 5. Deliverables that let someone else check the claim
 Final FASTA (rotated to COX1) + GFF/GenBank; the doubled/tripled-reference BAM and a single-copy BAM with `HP` (haplotype cluster)
 and `PO` (segment class) tags; per-population BAMs; `variants.tsv`; `numts.loci.tsv` + `numts.read_classes.tsv` +
-`numts.junction_support.tsv`; the redwood map, the NUMT landscape and catalogue; an IGV session that opens them; a README with
+`numts.junction_support.tsv`; the redwood map, the NUMT landscape and catalog; an IGV session that opens them; a README with
 the counts behind every statement (origin-crossing reads, junction depth ratio, reads per lineage, loci per class).

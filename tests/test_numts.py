@@ -127,9 +127,9 @@ def test_numt_figures_render(synthetic, tmp_path):
     min_w = 0.05 * max(lengths.values())
     widths = sorted(pt.get_width() for pt in a1.patches[3:])
     assert abs(widths[0] - min_w / 1e6) < 1e-9 and abs(widths[1] - 16000 / 1e6) < 1e-9
-    assert "1 loci narrower than" in a1.get_title(loc="left") and "wider than real" in a1.get_title(loc="left")
+    assert f"boxes >= {min_w / 1000:.0f} kb wide" in a1.get_title(loc="left") and "wider than real" in a1.get_title(loc="left")
     fig2, a4 = plt.subplots(); draw_numt_landscape(a4, rows, lengths, min_visible_frac=0.0001)
-    assert "narrower" not in a4.get_title(loc="left")          # nothing widened, nothing claimed
+    assert "wider than real" not in a4.get_title(loc="left")   # nothing widened, nothing claimed
     plt.close(fig2)
     # the class legend states the thresholds, so "fragment / large / full-length" is defined on the figure itself
     legend_text = [t.get_text() for t in a2.get_legend().get_texts()]

@@ -1,22 +1,22 @@
-"""NUMT catalogue, read classification and figures.
+"""NUMT catalog, read classification and figures.
 
 A nuclear genome usually carries copies of mitochondrial sequence (NUMTs). They confuse mitogenome assembly (an assembler may
 extend the mitochondrion into a NUMT flank, or build the NUMT instead of the molecule) and read-population analyses (NUMT-derived
 reads look like a divergent mitochondrial haplotype). This module
 
-* catalogues NUMT loci: the mitogenome is aligned to the nuclear assembly (minimap2 ``asm20``; optionally ``blastn -task
+* catalogs NUMT loci: the mitogenome is aligned to the nuclear assembly (minimap2 ``asm20``; optionally ``blastn -task
   dc-megablast`` for short diverged fragments), hits on one chromosome within ``merge`` bp are merged into a locus, and each locus
   gets its span, the mitogenome intervals it covers, the fraction of the molecule covered, SNV-only and total identity, and a class
   (``full-length`` >= 95 % of the molecule, ``large`` >= 5 kb, ``fragment``);
 * classifies long reads mapped to nuclear + mitochondrial sequence together (``minimap2 -Y --secondary=no``, supplementary
   alignments kept) by the origin of their segments: ``mito_only``, ``mito_multisegment`` (two mito segments, e.g. a read crossing
-  the origin of a circular molecule), ``mito+nuclear_at_NUMT_locus`` (a junction read of a catalogued NUMT), ``mito+nuclear_elsewhere``
-  (an uncatalogued NUMT or a library chimera), ``nuclear_only_at_NUMT_locus`` (a NUMT read whose whole length is explained by the
+  the origin of a circular molecule), ``mito+nuclear_at_NUMT_locus`` (a junction read of a cataloged NUMT), ``mito+nuclear_elsewhere``
+  (an uncataloged NUMT or a library chimera), ``nuclear_only_at_NUMT_locus`` (a NUMT read whose whole length is explained by the
   nuclear locus) and ``nuclear_only``;
 * counts reads spanning each nuclear-mitochondrial junction in a single alignment (junction support);
-* draws the NUMT landscape (chromosomes with loci coloured by identity), the NUMT-versus-mitogenome catalogue (which part of the
+* draws the NUMT landscape (chromosomes with loci colored by identity), the NUMT-versus-mitogenome catalog (which part of the
   molecule each locus covers, at what identity), the per-locus mtDNA-content panel that defines the classes, and a composite
-  letter-proportioned figure (circular map and class panel on top, landscape and catalogue across the full width).
+  letter-proportioned figure (circular map and class panel on top, landscape and catalog across the full width).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ LOCUS_COLUMNS = ["locus", "chrom", "start", "end", "span_bp", "n_hits", "mito_bp
                  "n_snv", "n_indel", "class", "strands", "mito_intervals"]
 
 
-# ----------------------------------------------------------------------------------------------------------- catalogue
+# ----------------------------------------------------------------------------------------------------------- catalog
 def read_fasta(path: Path) -> dict[str, str]:
     seqs, name, buf = {}, None, []
     for line in Path(path).read_text().splitlines():
@@ -112,7 +112,7 @@ def _union(intervals: list[tuple[int, int]]) -> list[list[int]]:
 
 
 def merge_loci(hits: list[dict], mito_length: int, merge: int = 3000, full_length: float = 0.95, large_bp: int = 5000) -> list[dict]:
-    """Cluster hits per chromosome (any hit within ``merge`` bp of the running locus joins it) and summarise each locus."""
+    """Cluster hits per chromosome (any hit within ``merge`` bp of the running locus joins it) and summarize each locus."""
     by_chrom: dict[str, list[dict]] = collections.defaultdict(list)
     for h in hits: by_chrom[h["chrom"]].append(h)
     loci = []
@@ -279,9 +279,9 @@ def class_labels(full_length: float = 0.95, large_bp: int = 5000) -> dict[str, s
 
 def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, max_chroms: int = 40, min_chrom_bp: int = 0,
                         title: str | None = None, label_fontsize: float | None = None, min_visible_frac: float = 0.005) -> None:
-    """Chromosomes as grey bars with every locus drawn at its true genomic span (box height = class, colour = identity).
+    """Chromosomes as gray bars with every locus drawn at its true genomic span (box height = class, color = identity).
     A NUMT is a few kb on a chromosome of tens of Mb, so a locus narrower than ``min_visible_frac`` of the longest sequence
-    is widened to that minimum, centred on the locus, and the title states the minimum and the true span range."""
+    is widened to that minimum, centered on the locus, and the title states the minimum and the true span range."""
     # show the long sequences (>= min_chrom_bp, default 2 % of the longest) plus every sequence that carries a locus
     if not min_chrom_bp and chrom_lengths:
         min_chrom_bp = int(0.02 * max(chrom_lengths.values()))
@@ -311,7 +311,7 @@ def draw_numt_landscape(ax, loci: list[dict], chrom_lengths: dict[str, int], *, 
     ax.set_ylim(-0.7, len(chroms) - 0.3); ax.set_xlim(0, max(chrom_lengths[c] for c in chroms) / 1e6 * 1.02 if chroms else 1)
     ax.set_xlabel("position (Mb)", fontsize=7); ax.tick_params(axis="x", labelsize=6); ax.invert_yaxis()
     n = collections.Counter(r["class"] for r in loci)
-    note = "box height = class, colour = identity to the mtDNA"
+    note = "box height = class, color = identity to the mtDNA"
     if widened:
         lo, hi = min(widened) / 1000, max(widened) / 1000
         note += (f"; boxes >= {min_w / 1000:.0f} kb wide (true spans {lo:.1f}-{hi:.1f} kb, "
@@ -354,7 +354,7 @@ def draw_numt_sizes(ax, loci: list[dict], mito_length: int, *, full_length: floa
 
 def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None = None, *, title: str | None = None,
                       full_length: float = 0.95, large_bp: int = 5000, legend_ncol: int = 3) -> None:
-    """Each locus as horizontal segments over the mitogenome coordinates it covers, at y = identity, coloured by class.
+    """Each locus as horizontal segments over the mitogenome coordinates it covers, at y = identity, colored by class.
 
     A locus that covers the mitogenome in several pieces (typical for ``large`` loci: the pieces are joined by a dotted line) keeps
     one identity and one class; the class is its total mitochondrial content, not the size of any one piece.
@@ -381,7 +381,7 @@ def draw_numt_catalog(ax, loci: list[dict], mito_length: int, gff: Path | None =
         ax.plot([], [], color=col, lw=2, label=labels[cls])
     ax.legend(fontsize=6 if legend_ncol > 1 else 5.5, loc="lower right", frameon=legend_ncol == 1, framealpha=0.9, edgecolor="none",
               ncol=legend_ncol, columnspacing=1.0, handlelength=1.5)
-    ax.set_title(title or f"NUMT catalogue: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mtDNA in the nuclear genome\n"
+    ax.set_title(title or f"NUMT catalog: {len(loci)} loci, {sum(r['mito_bp'] for r in loci):,} bp of mtDNA in the nuclear genome\n"
                  "class = mtDNA content of the whole locus; dotted = pieces of one locus", fontsize=6.5 if legend_ncol > 1 else 6, loc="left")
 
 
@@ -408,24 +408,23 @@ def plot_composite_figure(*, mito_fasta: Path, loci: list[dict], chrom_lengths: 
                           title: str | None = None, dpi: int = 300, fileforms=("png", "pdf"), page: tuple[float, float] = (6.5, 9.0),
                           **circular_kwargs) -> list[Path]:
     """One page per mitogenome: the redwood circular map with its ring key (a) across the top, the NUMT landscape (b),
-    then the NUMT catalogue (c) beside the per-locus mtDNA-content panel that defines the NUMT classes (d).
+    then the NUMT catalog (c) beside the per-locus mtDNA-content panel that defines the NUMT classes (d).
 
     The page is exactly ``page`` inches (default 6.5 x 9, the text area of letter paper with 1-inch margins, so the file prints on
     letter or A4 and drops into a Word / Google document at full text width without scaling); margins are laid out inside the
     figure and the output is not cropped, so the PDF page and the PNG pixel size are fixed."""
-    from .renderer import draw_circular_plot, read_reference, PLOT_LIMIT, LEGEND_WIDTH
+    from .renderer import draw_circular_plot, read_reference
     reference = read_reference(Path(mito_fasta)); L = len(reference)
     w, h = page
     left, right, top, bottom = 0.105, 0.925, 0.965, 0.06
     content_w = (right - left) * w
-    map_aspect = (2 * PLOT_LIMIT + LEGEND_WIDTH) / (2 * PLOT_LIMIT)
-    h_map = content_w / map_aspect
+    h_map = min(0.46 * h, content_w / 1.12)          # the map with its corner key is ~1.1x wider than tall
     nchrom = len({r["chrom"] for r in loci} | {c for c, l in chrom_lengths.items() if l >= 0.02 * max(chrom_lengths.values())}) if chrom_lengths else 1
     nchrom = min(40, nchrom)
     h_land = min(0.25 * h, max(0.15 * h, (0.085 * nchrom + 0.5) * h / 9.0))
     h_cat = 0.21 * h
     fig = plt.figure(figsize=(w, h))
-    gs = fig.add_gridspec(3, 2, width_ratios=[0.68, 0.32], height_ratios=[h_map, h_land, h_cat], hspace=0.40, wspace=0.32,
+    gs = fig.add_gridspec(3, 2, width_ratios=[0.68, 0.32], height_ratios=[h_map, h_land, h_cat], hspace=0.36, wspace=0.32,
                           left=left, right=right, top=top, bottom=bottom)
     ax0 = fig.add_subplot(gs[0, :]); ax1 = fig.add_subplot(gs[1, :]); ax2 = fig.add_subplot(gs[2, 0]); ax_sz = fig.add_subplot(gs[2, 1])
     draw_circular_plot(ax0, length=L, reference=reference, gff=Path(gff) if gff else None, main_bam=Path(main_bam) if main_bam else None,
