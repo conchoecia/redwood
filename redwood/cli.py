@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from .renderer import run_plot
+from .numts import run_numts
 from .variants import run_variants
 from .workflow import (
     map_long,
@@ -178,6 +179,10 @@ def build_parser():
              "where the read population disagrees with the reference above --min-minor-frac, 'all' marks every "
              "mismatch, 'none' disables them. Insertions/deletions >= --min-indel are always marked.",
     )
+    parser_plot.add_argument("--numt-loci", dest="numt_loci", action=FullPaths,
+                             help="redwood numts loci TSV: draws a ring of the mitogenome intervals present as NUMTs, coloured by identity.")
+    parser_plot.add_argument("--circular-read-classes", dest="circular_read_classes", action=FullPaths,
+                             help="redwood numts read-class TSV: colour read arcs by class (NUMT junction reads red, chimeras purple, ...).")
     parser_plot.add_argument("--no-variant-ring", dest="no_variant_ring", action="store_true",
                              help="Do not draw the per-column disagreement ring inside the annotation.")
     parser_plot.add_argument("--variant-table", dest="variant_table", action=FullPaths,
@@ -318,6 +323,31 @@ def build_parser():
                                  help="Flag thresholds = max(--min-minor-frac, this x the table-wide median fraction), so "
                                       "noisy CLR/ONT reads flag only columns above their error level (0 = fixed threshold).")
     parser_variants.set_defaults(func=run_variants)
+
+    parser_numts = subparsers.add_parser(
+        "numts",
+        help="catalogue NUMTs in a nuclear assembly, classify reads as mitochondrial or NUMT-derived, draw NUMT figures",
+    )
+    parser_numts.add_argument("--mito-fasta", required=True, type=Path)
+    parser_numts.add_argument("--nuclear-fasta", required=True, type=Path, help="Nuclear assembly (exclude any mitochondrial scaffold first).")
+    parser_numts.add_argument("--outdir", required=True, type=Path)
+    parser_numts.add_argument("--gff", type=Path, help="Mitogenome annotation (drawn under the catalogue panel).")
+    parser_numts.add_argument("--long-reads", type=Path, nargs="+", help="Long reads to map to nuclear + mito and classify.")
+    parser_numts.add_argument("--long-read-preset", default="map-hifi")
+    parser_numts.add_argument("--bam", type=Path, help="Existing BAM of reads vs nuclear + mito (minimap2 -Y --secondary=no) instead of --long-reads.")
+    parser_numts.add_argument("--mito-bam", type=Path, help="Reads mapped to the mitogenome alone; a copy tagged PO:Z=<class> is written.")
+    parser_numts.add_argument("--blastn", action="store_true", help="Also run blastn -task dc-megablast for short/diverged fragments (needs BLAST+).")
+    parser_numts.add_argument("--merge", type=int, default=3000, help="Merge hits within this distance into one locus (default 3000).")
+    parser_numts.add_argument("--pad", type=int, default=2000, help="A nuclear read segment within this distance of a locus counts as 'at the locus'.")
+    parser_numts.add_argument("--flank", type=int, default=1000, help="Junction support: alignment must extend this far on both sides of a locus end.")
+    parser_numts.add_argument("--threads", type=int, default=8)
+    parser_numts.add_argument("--dpi", type=int, default=200)
+    parser_numts.add_argument("--figure", action="store_true", help="Also draw the composite figure: circular map, landscape, catalogue.")
+    parser_numts.add_argument("--figure-name", default="mitogenome_numts")
+    parser_numts.add_argument("--figure-bam", type=Path, help="Long-read BAM for the circular panel (e.g. redwood long_reads.redwood.bam).")
+    parser_numts.add_argument("--figure-rnaseq-bam", type=Path)
+    parser_numts.add_argument("--figure-variant-table", type=Path)
+    parser_numts.set_defaults(func=run_numts)
 
     parser_run = subparsers.add_parser(
         "run",

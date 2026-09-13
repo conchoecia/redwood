@@ -235,6 +235,30 @@ redwood variants --mito-fasta mitochondrion.fa --bam reads.bam --output variants
   --summary variants.json --min-minor-frac 0.05 [--all-columns]
 ```
 
+## NUMTs
+
+`redwood numts` catalogues nuclear copies of the mitogenome, classifies long reads as mitochondrial or NUMT-derived and draws
+the figures a mitogenome paper needs:
+
+```bash
+redwood numts --mito-fasta mitochondrion.fa --nuclear-fasta nuclear.fa --gff annotation.gff \
+  --long-reads reads.fq.gz --mito-bam rw/long_reads.raw.bam --outdir numts --figure --figure-bam rw/long_reads.redwood.bam
+```
+
+The mitogenome is aligned to the nuclear assembly (minimap2 `asm20`, optionally `--blastn` dc-megablast for short diverged
+fragments); hits within `--merge` bp are one locus. `numts.loci.tsv` lists every locus with its span, the mitogenome intervals it
+covers, the fraction of the molecule, identity (total and SNV-only) and class (`full-length` >= 95 % of the molecule, `large` >= 5 kb,
+`fragment`). Reads mapped to nuclear + mitochondrial sequence together are classified by where their segments land
+(`numts.read_classes.tsv`: `mito_only`, `mito_multisegment` = origin-crossing, `mito+nuclear_at_NUMT_locus` = junction read of a
+catalogued NUMT, `mito+nuclear_elsewhere`, `nuclear_only_at_NUMT_locus`, `nuclear_only`); reads spanning each nuclear-mitochondrial
+junction are counted (`numts.junction_support.tsv`); `--mito-bam` writes a copy of the mito BAM with the class in a `PO:Z` tag.
+Figures: `numts.landscape.png` (chromosomes with loci coloured by identity to the mtDNA, sized by class), `numts.catalog.png`
+(each locus over the mitogenome coordinates it covers, at its identity, with the annotation underneath) and, with `--figure`,
+one composite figure: circular map on top, landscape and catalogue below. On the circular map, `redwood plot --numt-loci
+numts.loci.tsv` adds a ring of the mitogenome intervals present as NUMTs (viridis = identity) and `--circular-read-classes
+numts.read_classes.tsv` colours reads by class (NUMT junction reads red, chimeras purple, nuclear grey).
+`AGENTS.md` explains how to tell NUMT reads from mitochondrial reads with these outputs.
+
 ## Notes
 
 This repository keeps the original redwood plotting lineage from

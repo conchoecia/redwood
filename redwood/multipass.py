@@ -32,6 +32,7 @@ class MultiPassRead:
     # pysam CIGAR tuples in (op_code, length) order — for indel rendering.
     cigar: list[tuple[int, int]] = field(default_factory=list)
     marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
+    name: str = ""
 
 
 @dataclass
@@ -43,6 +44,7 @@ class RegularRead:
     # draw per-read insertions and deletions.
     cigar: list[tuple[int, int]] = field(default_factory=list)
     marks: list[tuple[int, str]] = field(default_factory=list)   # (offset along the reference from start, kind)
+    name: str = ""
 
 
 def read_marks(read, reference_seq: str, true_length: int, min_indel: int = 1) -> list[tuple[int, str]]:
@@ -125,9 +127,9 @@ def classify_circular_reads(
             marks = read_marks(read, reference_seq, true_length, min_indel) if reference_seq else []
             if continuous and span >= min_pass_fraction * true_length:
                 multipass.append(
-                    MultiPassRead(start, span / true_length, span, cigar, marks))
+                    MultiPassRead(start, span / true_length, span, cigar, marks, read.query_name))
             else:
-                regular.append(RegularRead(start, min(span, true_length), cigar, marks))
+                regular.append(RegularRead(start, min(span, true_length), cigar, marks, read.query_name))
     # draw the longest spirals first (outermost)
     multipass.sort(key=lambda r: r.passes, reverse=True)
     return multipass, regular

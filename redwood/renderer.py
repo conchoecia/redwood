@@ -36,6 +36,8 @@ FEATURE_COLORS = {
     "tRNA": "#d870a2",
 }
 
+from .numts import CLASS_COLORS  # read-class colours shared with the NUMT module
+
 # IGV-style read marks: mismatched read base, insertion, deletion.
 MARK_COLORS = {"A": "#009900", "C": "#0000ff", "G": "#d17105", "T": "#ff0000", "I": "#800080", "D": "#000000"}
 VARIANT_RING_COLORS = {"mismatch": "#d62728", "deletion": "#000000", "insertion": "#800080", "minor": "#f28e2b"}
@@ -278,6 +280,22 @@ def add_read_marks(
         add_arc(ax, int(pos - half), int(pos + half) + 1, length, centerline + width / 2, width,
                 color=MARK_COLORS[kind], alpha=1.0, linewidth=0, zorder=4)
         drawn += 1
+    return drawn
+
+
+def add_numt_ring(ax, loci: list[dict], length: int, r_in: float, r_out: float, lanes: int = 3) -> int:
+    """Mitogenome intervals that exist as NUMTs in the nuclear genome, one arc per locus interval, coloured by identity
+    (viridis, 75-100 %), stacked into ``lanes`` lanes (largest loci outermost)."""
+    from .numts import _identity_color
+    lane_h = (r_out - r_in) / lanes; drawn = 0
+    ends = [-1] * lanes
+    for r in sorted(loci, key=lambda x: -x["mito_bp"]):
+        for s, e in r["intervals"]:
+            lane = next((i for i in range(lanes) if ends[i] <= s), None)
+            if lane is None: lane = min(range(lanes), key=lambda i: ends[i])
+            ends[lane] = e
+            add_arc(ax, s, e, length, r_out - lane * lane_h, lane_h * 0.85, color=_identity_color(r["identity"]), alpha=0.95, linewidth=0, zorder=2)
+            drawn += 1
     return drawn
 
 
@@ -831,6 +849,8 @@ def draw_circular_plot(
     variant_ring: bool = True,
     variant_table: Path | None = None,
     min_minor_frac: float = 0.05,
+    numt_loci: Path | None = None,
+    read_classes: Path | None = None,
 ) -> None:
     fg = "#eef4fb" if dark else "#111827"
     rna_forward = "#b6906a" if dark else BARK_COLOR
@@ -905,6 +925,18 @@ def draw_circular_plot(
     # CIGAR indel detail is drawn on both — regular reads as arc-width changes
     # (add_cigar_read), spirals as line-width changes (add_spiral_read).
     r_top, r_min, rung_w = 0.894, 0.40, 0.0087
+    numt_rows = []
+    if numt_loci and Path(str(numt_loci)).exists():
+        from .numts import read_loci
+
+        numt_rows = read_loci(Path(str(numt_loci)))
+        add_numt_ring(ax, numt_rows, length, 0.866, 0.908)
+        r_top = 0.856
+    class_of: dict[str, str] = {}
+    if read_classes and Path(str(read_classes)).exists():
+        for line in Path(str(read_classes)).read_text().splitlines()[1:]:
+            f = line.split("\t")
+            if len(f) >= 2: class_of[f[0]] = f[1]
     if main_bam is not None and Path(str(main_bam)).exists():
         # Column-level disagreement of the read population with the reference (mismatch / indel table):
         # drives the variant ring and, in "shared" mode, which per-read mismatches are marked.
@@ -955,7 +987,7 @@ def draw_circular_plot(
                 r_top - rung * rung_w,
                 rung_w,
                 wrap_ramp,
-                MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
+                CLASS_COLORS[class_of[mp.name]] if class_of and class_of.get(getattr(mp, "name", "")) in CLASS_COLORS and class_of.get(mp.name) not in ("mito_only", "mito_multisegment") else MULTIPASS_COLORS[idx % len(MULTIPASS_COLORS)],
                 cigar=mp.cigar,
                 min_indel=min_indel,
                 marks=mp.marks if want_marks else None,
@@ -969,9 +1001,10 @@ def draw_circular_plot(
             radius = r_top - (rung + lane) * rung_w
             if radius <= r_min:
                 continue
+            cls = class_of.get(getattr(read, "name", ""), None) if class_of else None
             if read.cigar:
                 add_cigar_read(ax, read.start, read.cigar, length, radius,
-                               min_indel)
+                               min_indel, gradient=[CLASS_COLORS[cls]] if cls in CLASS_COLORS and cls not in ("mito_only", "mito_multisegment") else REDWOOD_GRADIENT)
             else:
                 add_arc(
                     ax, read.start, read.start + read.span, length, radius,
@@ -980,6 +1013,12 @@ def draw_circular_plot(
                 )
             if want_marks and read.marks:
                 add_read_marks(ax, read.start, read.marks, length, radius, mark_filter=mark_filter)
+        if class_of:
+            x = -0.24
+            for cls, text in (("mito+nuclear_at_NUMT_locus", "NUMT junction read"), ("mito+nuclear_elsewhere", "chimera / uncatalogued NUMT"),
+                              ("nuclear_only_at_NUMT_locus", "nuclear (NUMT)")):
+                ax.text(x, -0.36, text, ha="left", va="center", fontsize=4.2, color=CLASS_COLORS[cls], zorder=6)
+                x += 0.02 + 0.0058 * len(text)
         if want_marks:
             legend = [("A", "A"), ("C", "C"), ("G", "G"), ("T", "T"), ("I", "ins"), ("D", "del")]
             x = -0.24
@@ -1035,6 +1074,8 @@ def plot_file(
     variant_ring: bool = True,
     variant_table: Path | None = None,
     min_minor_frac: float = 0.05,
+    numt_loci: Path | None = None,
+    read_classes: Path | None = None,
 ) -> None:
     bg = "#0d1117" if dark else "#ffffff"
     edge = "#303946" if dark else "#d8dee8"
@@ -1069,6 +1110,8 @@ def plot_file(
         variant_ring=variant_ring,
         variant_table=variant_table,
         min_minor_frac=min_minor_frac,
+        numt_loci=numt_loci,
+        read_classes=read_classes,
     )
     fig.subplots_adjust(left=0.035, right=0.965, bottom=0.055, top=0.95)
     print_images(
@@ -1123,6 +1166,8 @@ def run_plot(args) -> None:
         variant_ring=not getattr(args, "no_variant_ring", False),
         variant_table=Path(args.variant_table) if getattr(args, "variant_table", None) else None,
         min_minor_frac=getattr(args, "min_minor_frac", 0.05),
+        numt_loci=Path(args.numt_loci) if getattr(args, "numt_loci", None) else None,
+        read_classes=Path(args.circular_read_classes) if getattr(args, "circular_read_classes", None) else None,
     )
 
 
