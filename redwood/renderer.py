@@ -1019,16 +1019,19 @@ def add_track_legend(ax, layers: list[tuple[str, str]], *, dark: bool = False, h
                 for r, a, kind in ((radii[0], 100, "T"), (radii[1], 156, "A"), (radii[2], 140, "I")):
                     x, y = arc_xy(r, a, a, k=1); ax.plot(x, y, marker="o", ms=lw * 1.2, mew=0, color=MARK_COLORS[kind], zorder=7)
         elif key == "multipass":
-            # one read spiraling inward: flat along each turn, stepping down one rung over a short ramp. Clockwise travel
-            # (the map's direction) runs from the left edge of the cut-out (179 deg) to the top edge (91 deg).
+            # one read spiraling inward, seen through the cut-out: each turn crosses the wedge once as a flat arc on its own
+            # rung and steps down to the next rung only at the end of the turn, as add_spiral_read draws it (flat, then a
+            # short ramp). Clockwise travel (the map's direction) runs from the left edge of the cut-out (179 deg) to the
+            # top edge (91 deg), so the steps sit together at the top edge as a small staircase. A step in the middle of
+            # the wedge would put two half-turns on each rung and read as a zig-zag rather than a spiral.
             spacing = band / 3; lw = line_width(spacing)
             levels = [r_out - spacing * (0.5 + j) for j in range(3)]
-            ramp_hi, ramp_lo = 150.0, 124.0
+            ramp_hi, ramp_lo = t1 + 10.0, t1 + 1.0
             for j in range(3):
-                a = np.linspace(t2 - 1, ramp_hi, 20); r = np.full_like(a, levels[j])
+                a = np.linspace(t2 - 1, ramp_hi if j < 2 else t1 + 1, 40); r = np.full_like(a, levels[j])
                 if j < 2:
-                    a = np.concatenate([a, np.linspace(ramp_hi, ramp_lo, 14)[1:], np.linspace(ramp_lo, t1 + 1, 20)[1:]])
-                    r = np.concatenate([r, np.linspace(levels[j], levels[j + 1], 14)[1:], np.full(19, levels[j + 1])])
+                    a = np.concatenate([a, np.linspace(ramp_hi, ramp_lo, 12)[1:]])
+                    r = np.concatenate([r, np.linspace(levels[j], levels[j + 1], 12)[1:]])
                 ax.plot(cx + r * np.cos(np.radians(a)), cy + r * np.sin(np.radians(a)), color=MULTIPASS_COLORS[0], lw=lw,
                         solid_capstyle="round", solid_joinstyle="round", zorder=5)
         elif key == "numts":
